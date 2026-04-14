@@ -7,7 +7,17 @@ const getUid = () => {
   return uid;
 };
 
-const getGroup = () => localStorage.getItem('ht-group') || '';
+const getGroup = () => {
+  // 优先从 URL 参数读取 group code
+  const params = new URLSearchParams(window.location.search);
+  const urlGroup = params.get('g');
+  if (urlGroup) {
+    localStorage.setItem('ht-group', urlGroup);
+    return urlGroup;
+  }
+  return localStorage.getItem('ht-group') || '';
+};
+
 const setGroup = (code) => localStorage.setItem('ht-group', code);
 
 const storage = {
@@ -49,7 +59,6 @@ const storage = {
     } catch { return null; }
   },
 
-  // 实时监听共享数据
   listen(key, callback) {
     const code = getGroup();
     if (!code) return () => {};
