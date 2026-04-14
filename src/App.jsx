@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import storage from './storage';
 
+
 const H = 36;
 const HOURS = Array.from({length:18}, (_,i) => i+7);
 const LATE = Array.from({length:6}, (_,i) => i+1);
@@ -117,8 +118,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--txt)}
 .day-btn .d{display:block;font-size:.58rem;opacity:.7;margin-top:.1rem}
 .date-nav .arr{width:1.7rem;height:1.7rem;border:1px solid var(--bdr);border-radius:.45rem;background:var(--white);color:var(--txt2);font-size:.8rem;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;font-family:var(--font);box-shadow:var(--shadow)}
 
-.late-bar{display:flex;justify-content:center;padding:.3rem .7rem;background:var(--card2);border-bottom:1px solid var(--bdr);flex-shrink:0}
-.late-btn{font-size:.68rem;padding:.25rem .7rem;border-radius:2rem;border:1px solid var(--bdr);background:var(--white);color:var(--txt3);cursor:pointer;font-family:var(--font);transition:all .15s}
+.late-btn{font-size:.68rem;padding:.25rem .7rem;border-radius:2rem;border:1px solid var(--bdr);background:var(--white);color:var(--txt3);cursor:pointer;font-family:var(--font);transition:all .15s;white-space:nowrap;flex-shrink:0}
 .late-btn.on{color:var(--acc);border-color:var(--accBdr);background:var(--accBg)}
 
 .member-tabs{display:flex;gap:.3rem;padding:.4rem .7rem;background:var(--card2);border-bottom:1px solid var(--bdr);flex-shrink:0;overflow-x:auto}
@@ -441,11 +441,14 @@ export default function HabitTracker(){
   const doExport=()=>{
     let csv="日期,时段,预期,完成,实际\n";
     const s=new Date(expStart+"T00:00:00");const e=new Date(expEnd+"T00:00:00");
+    let hasData=false;
     for(let d=new Date(s);d<=e;d.setDate(d.getDate()+1)){
       const key=dk(d);const md=getMemberDay(key,curUser);
       if(md.plans.length===0){csv+=`${key},无计划,,,\n`;continue}
+      hasData=true;
       md.plans.forEach(p=>{csv+=`${key},${fmtT(p.start)}-${fmtT(p.end)},${p.content},${p.done?"是":"否"},${p.actual||(p.done?p.content:"")}\n`});
     }
+    if(!hasData){showToast("所选日期范围内没有记录","fail");return}
     const blob=new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8"});
     const url=URL.createObjectURL(blob);const a=document.createElement("a");
     a.href=url;a.download=`打卡记录_${expStart}_${expEnd}.csv`;a.click();URL.revokeObjectURL(url);
@@ -517,20 +520,17 @@ export default function HabitTracker(){
         <button className="arr" onClick={()=>document.getElementById("dp")?.showPicker?.()} title="更多">…</button>
       </div>
 
-      {/* Fix #4: late button in its own bar, always visible on mobile */}
-      <div className="late-bar">
-        <button className={`late-btn ${showLate?"on":""}`} onClick={()=>setShowLate(!showLate)}>
-          {showLate?"隐藏凌晨 1:00-6:00":"显示凌晨 1:00-6:00"}
-        </button>
-      </div>
-
+      {view==="timeline"&&(
+      <div style={{display:"contents"}}>
       <div className="member-tabs">
         {sortedMembers.map((m,i)=>(<button key={m.id} className={`mtab ${selMember===m.id?"on":""}`}
           style={selMember===m.id?{background:MCOLS[i%MCOLS.length],borderColor:MCOLS[i%MCOLS.length]}:{}}
           onClick={()=>setSelMember(m.id)}>{m.name}{m.id===curUser?" (我)":""}</button>))}
+        <button className={`late-btn ${showLate?"on":""}`} style={{marginLeft:"auto"}} onClick={()=>setShowLate(!showLate)}>
+          {showLate?"隐藏凌晨":"凌晨"}
+        </button>
       </div>
 
-      {view==="timeline"&&(
         <div className="tl-wrap">
           <div style={{paddingTop:12,height:(totalH+1)*H*2+80}}>
             <div className="tl-grid" style={{height:(totalH+1)*H*2}}>
@@ -603,7 +603,7 @@ export default function HabitTracker(){
             </div>
           </div>
         </div>
-      )}
+      </div>)}
 
       {view==="settings"&&(
         <div className="page">
@@ -626,8 +626,6 @@ export default function HabitTracker(){
               </div>):(<><div className="mn">{m.name}</div>{m.id===curUser&&<span className="my">我</span>}
                 <button className="bs2" style={{padding:".25rem .45rem",fontSize:".65rem",marginLeft:".3rem"}} onClick={()=>{setEditingMemberId(m.id);setEditingMemberName(m.name)}}>改名</button></>)}
             </div>))}</div>
-            <div className="ar"><input className="ii" value={addName} onChange={e=>setAddName(e.target.value)} placeholder="新成员昵称"/>
-              <button className="bp" style={{width:"auto",padding:".5rem .9rem",flex:"none"}} onClick={handleAddMember}>添加</button></div>
           </div></div>
 
           <div className="ss"><h3>🔑 邀请码</h3><div className="sc">
