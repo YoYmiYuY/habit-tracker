@@ -12,7 +12,7 @@ const genCode = () => {
   const c = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   return Array.from({length:6}, ()=>c[Math.floor(Math.random()*c.length)]).join("");
 };
-const dk = (d=new Date()) => d.toISOString().slice(0,10);
+const dk = (d=new Date()) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
 const dayLabel = s => ["日","一","二","三","四","五","六"][new Date(s+"T00:00:00").getDay()];
 const fmtH = h => {
   if (h >= 24) return `次日 ${String(h - 24).padStart(2,"0")}:00`;
@@ -529,8 +529,10 @@ export default function HabitTracker(){
         {sortedMembers.map((m,i)=>(<button key={m.id} className={`mtab ${selMember===m.id?"on":""}`}
           style={selMember===m.id?{background:MCOLS[i%MCOLS.length],borderColor:MCOLS[i%MCOLS.length]}:{}}
           onClick={()=>setSelMember(m.id)}>{m.name}{m.id===curUser?" (我)":""}</button>))}
-        <button className={`late-btn ${showLate?"on":""}`} style={{marginLeft:"auto"}} onClick={()=>setShowLate(!showLate)}>
-          {showLate?"隐藏凌晨":"凌晨"}
+      </div>
+      <div style={{display:"flex",justifyContent:"center",padding:".3rem .7rem",background:"var(--card2)",borderBottom:"1px solid var(--bdr)",flexShrink:0}}>
+        <button className={`late-btn ${showLate?"on":""}`} onClick={()=>setShowLate(!showLate)}>
+          {showLate?"隐藏凌晨 1:00-6:00":"显示凌晨 1:00-6:00"}
         </button>
       </div>
 
