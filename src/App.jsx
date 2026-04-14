@@ -1,9 +1,9 @@
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import storage from './storage';
 
 const H = 36;
-const HOURS = Array.from({length:18}, (_,i) => i+7); // 7,8,...,24 → 7:00 to 次日01:00
-const LATE = Array.from({length:6}, (_,i) => i+1); // 1,2,3,4,5,6
+const HOURS = Array.from({length:18}, (_,i) => i+7);
+const LATE = Array.from({length:6}, (_,i) => i+1);
 const MCOLS_L = ["#E8713A","#5B8DEF","#34B380","#D4527A","#9B6DD7","#E6A640"];
 const MCOLS_D = ["#F0945E","#6FA0F5","#45D99A","#E8709A","#B088E8","#F0C050"];
 const genId = () => Math.random().toString(36).slice(2,9);
@@ -32,57 +32,53 @@ const parseTimeStr = s => {
 };
 const TODAY = dk();
 
-const SAMPLE_DATA = () => {
-  const t = TODAY;
-  return {
-    [t]: {
-      m1: {
-        plans: [
-          {id:"s1",start:7,end:9,content:"晨跑 + 早餐",done:true,actual:""},
-          {id:"s2",start:9,end:12,content:"学习 React",done:false,actual:""},
-          {id:"s3",start:13,end:15,content:"写项目方案",done:false,actual:""},
-          {id:"s4",start:15,end:17,content:"团队会议",done:false,actual:""},
-          {id:"s5",start:19,end:21,content:"阅读 + 冥想",done:false,actual:""},
-          {id:"s6",start:21,end:23,content:"复盘整理",done:false,actual:""},
-        ],
-        reflection:{text:"",isPublic:true,sent:false}
-      },
-      m2: {
-        plans: [
-          {id:"s7",start:7,end:9,content:"瑜伽",done:true,actual:""},
-          {id:"s8",start:9,end:13,content:"准备考试",done:false,actual:""},
-          {id:"s9",start:14,end:16,content:"背单词",done:false,actual:""},
-          {id:"s10",start:19,end:21,content:"弹吉他",done:false,actual:""},
-        ],
-        reflection:{text:"今天状态不错！",isPublic:true,sent:true}
-      }
-    }
-  };
+/* ─── Local cache helpers ─── */
+const LC = {
+  get: (k) => { try { return JSON.parse(localStorage.getItem("ht_"+k)); } catch { return null; } },
+  set: (k, v) => { try { localStorage.setItem("ht_"+k, JSON.stringify(v)); } catch {} },
+  del: (k) => { try { localStorage.removeItem("ht_"+k); } catch {} },
 };
 
+const SAMPLE_DATA = () => {
+  const t = TODAY;
+  return { [t]: {
+    m1: { plans: [
+      {id:"s1",start:7,end:9,content:"晨跑 + 早餐",done:true,actual:""},
+      {id:"s2",start:9,end:12,content:"学习 React",done:false,actual:""},
+      {id:"s3",start:13,end:15,content:"写项目方案",done:false,actual:""},
+      {id:"s4",start:15,end:17,content:"团队会议",done:false,actual:""},
+      {id:"s5",start:19,end:21,content:"阅读 + 冥想",done:false,actual:""},
+      {id:"s6",start:21,end:23,content:"复盘整理",done:false,actual:""},
+    ], reflection:{text:"",isPublic:true,sent:false} },
+    m2: { plans: [
+      {id:"s7",start:7,end:9,content:"瑜伽",done:true,actual:""},
+      {id:"s8",start:9,end:13,content:"准备考试",done:false,actual:""},
+      {id:"s9",start:14,end:16,content:"背单词",done:false,actual:""},
+      {id:"s10",start:19,end:21,content:"弹吉他",done:false,actual:""},
+    ], reflection:{text:"今天状态不错！",isPublic:true,sent:true} }
+  }};
+};
+
+/* ─── Theme ─── */
 const LIGHT = {
   bg:"#F4F3F0",white:"#FFFFFF",card:"#FFFFFF",card2:"#FAFAF8",
-  bdr:"#EBEBEA",bdr2:"#E0DFDC",
-  txt:"#1A1A1A",txt2:"#666660",txt3:"#A0A098",
+  bdr:"#EBEBEA",bdr2:"#E0DFDC",txt:"#1A1A1A",txt2:"#666660",txt3:"#A0A098",
   acc:"#E8713A",acc2:"#F5945E",accBg:"rgba(232,113,58,.08)",accBdr:"rgba(232,113,58,.2)",
   ok:"#34B380",okBg:"rgba(52,179,128,.08)",okBdr:"rgba(52,179,128,.25)",
-  warn:"#E6A640",warnBg:"rgba(230,166,64,.08)",
-  danger:"#D4527A",
+  warn:"#E6A640",warnBg:"rgba(230,166,64,.08)",danger:"#D4527A",
   shadow:"0 1px 3px rgba(0,0,0,.06),0 1px 2px rgba(0,0,0,.04)",
-  shadow2:"0 4px 12px rgba(0,0,0,.08)",
-  topbar:"var(--white)",modalbg:"rgba(0,0,0,.35)",
+  shadow2:"0 4px 12px rgba(0,0,0,.08)",topbar:"var(--white)",modalbg:"rgba(0,0,0,.35)",
+  toastOk:"#34B380",toastFail:"#E8713A",
 };
 const DARK = {
   bg:"#111118",white:"#1A1A24",card:"#1E1E2A",card2:"#161620",
-  bdr:"#2A2A38",bdr2:"#353548",
-  txt:"#E8E8F0",txt2:"#9898AE",txt3:"#606078",
+  bdr:"#2A2A38",bdr2:"#353548",txt:"#E8E8F0",txt2:"#9898AE",txt3:"#606078",
   acc:"#E8813E",acc2:"#F5A060",accBg:"rgba(232,129,62,.12)",accBdr:"rgba(232,129,62,.25)",
   ok:"#3DD995",okBg:"rgba(61,217,149,.1)",okBdr:"rgba(61,217,149,.2)",
-  warn:"#F0C050",warnBg:"rgba(240,192,80,.1)",
-  danger:"#E8709A",
-  shadow:"0 1px 4px rgba(0,0,0,.2)",
-  shadow2:"0 4px 16px rgba(0,0,0,.3)",
+  warn:"#F0C050",warnBg:"rgba(240,192,80,.1)",danger:"#E8709A",
+  shadow:"0 1px 4px rgba(0,0,0,.2)",shadow2:"0 4px 16px rgba(0,0,0,.3)",
   topbar:"rgba(26,26,36,.9)",modalbg:"rgba(0,0,0,.6)",
+  toastOk:"#3DD995",toastFail:"#F5A060",
 };
 
 const makeCSS = (t) => `
@@ -90,21 +86,25 @@ const makeCSS = (t) => `
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 :root{
   --bg:${t.bg};--white:${t.white};--card:${t.card};--card2:${t.card2};
-  --bdr:${t.bdr};--bdr2:${t.bdr2};
-  --txt:${t.txt};--txt2:${t.txt2};--txt3:${t.txt3};
+  --bdr:${t.bdr};--bdr2:${t.bdr2};--txt:${t.txt};--txt2:${t.txt2};--txt3:${t.txt3};
   --acc:${t.acc};--acc2:${t.acc2};--accBg:${t.accBg};--accBdr:${t.accBdr};
   --ok:${t.ok};--okBg:${t.okBg};--okBdr:${t.okBdr};
-  --warn:${t.warn};--warnBg:${t.warnBg};
-  --danger:${t.danger};
+  --warn:${t.warn};--warnBg:${t.warnBg};--danger:${t.danger};
   --r:12px;--r2:16px;
-  --font:'Noto Sans SC',system-ui,-apple-system,sans-serif;
-  --mono:'JetBrains Mono',monospace;
+  --font:'Noto Sans SC',system-ui,-apple-system,sans-serif;--mono:'JetBrains Mono',monospace;
   --shadow:${t.shadow};--shadow2:${t.shadow2};
   font-size:clamp(14px,3.6vw,16px)
 }
 html,body,#root{height:100%;margin:0}
 body{font-family:var(--font);background:var(--bg);color:var(--txt)}
 .app{height:100%;display:flex;flex-direction:column;background:var(--bg);position:relative;overflow:hidden}
+
+/* Toast */
+.toast-wrap{position:fixed;top:0;left:0;right:0;z-index:999;display:flex;justify-content:center;pointer-events:none}
+.toast{margin-top:.6rem;padding:.4rem .9rem;border-radius:2rem;font-size:.75rem;font-weight:600;color:#fff;pointer-events:auto;animation:toastIn .3s ease;box-shadow:0 2px 12px rgba(0,0,0,.15)}
+.toast.ok{background:${t.toastOk}}
+.toast.fail{background:${t.toastFail};cursor:pointer}
+@keyframes toastIn{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:translateY(0)}}
 
 .topbar{padding:.7rem 1rem;display:flex;align-items:center;gap:.5rem;background:${t.topbar};border-bottom:1px solid var(--bdr);flex-shrink:0;z-index:10;backdrop-filter:blur(12px)}
 .topbar h1{font-size:1.05rem;font-weight:800;color:var(--txt);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:45%}
@@ -143,7 +143,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--txt)}
 .now-line{position:absolute;left:0;right:0;height:2px;background:var(--danger);z-index:4;pointer-events:none}
 .now-line::before{content:"";position:absolute;left:-4px;top:-3px;width:8px;height:8px;border-radius:50%;background:var(--danger)}
 
-.plan-card{position:absolute;left:4px;right:4px;border-radius:.5rem;padding:.35rem .45rem;cursor:pointer;transition:all .15s;overflow:hidden;z-index:2;border-left:3.5px solid;display:flex;flex-direction:column;gap:.08rem;min-height:1.8rem;box-shadow:var(--shadow)}
+.plan-card{position:absolute;border-radius:.5rem;padding:.35rem .45rem;cursor:pointer;transition:all .15s;overflow:hidden;z-index:2;border-left:3.5px solid;display:flex;flex-direction:column;gap:.08rem;min-height:1.8rem;box-shadow:var(--shadow)}
 .plan-card:active{transform:scale(.98);z-index:3}
 .plan-card .pc-content{font-size:.72rem;font-weight:600;line-height:1.3;color:var(--txt);overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
 .plan-card .pc-time{font-size:.55rem;font-family:var(--mono);color:var(--txt3)}
@@ -161,7 +161,6 @@ body{font-family:var(--font);background:var(--bg);color:var(--txt)}
 .bb-btn.on{color:var(--acc)}
 .bb-btn:active{transform:scale(.92)}
 
-/* Modal */
 .modal-bg{position:fixed;inset:0;background:${t.modalbg};backdrop-filter:blur(6px);z-index:50;display:flex;align-items:flex-end;justify-content:center}
 @media(min-width:640px){.modal-bg{align-items:center}}
 .modal{background:var(--card);border-radius:var(--r2) var(--r2) 0 0;padding:1.3rem;width:100%;max-width:420px;max-height:85vh;overflow-y:auto;box-shadow:var(--shadow2);animation:su .25s ease}
@@ -185,7 +184,6 @@ body{font-family:var(--font);background:var(--bg);color:var(--txt)}
 .chk-box.on{background:var(--ok);border-color:var(--ok)}
 .chk-label{font-size:.86rem;font-weight:500}
 
-/* Reflection */
 .refl-section{padding:1rem;background:var(--white);border-top:1px solid var(--bdr);margin-top:.4rem}
 .refl-title{font-size:.85rem;font-weight:700;color:var(--txt);margin-bottom:.6rem;display:flex;align-items:center;gap:.35rem}
 .refl-input-area{display:flex;gap:.4rem;align-items:flex-end}
@@ -201,12 +199,10 @@ body{font-family:var(--font);background:var(--bg);color:var(--txt)}
 .refl-pub-text{font-size:.82rem;color:var(--txt);line-height:1.5;white-space:pre-wrap}
 .refl-pub-meta{display:flex;align-items:center;gap:.4rem;margin-top:.4rem;font-size:.65rem;color:var(--txt3)}
 .refl-edit-btn{font-size:.68rem;padding:.15rem .45rem;border-radius:1rem;border:1px solid var(--bdr);background:var(--white);color:var(--txt2);cursor:pointer;font-family:var(--font);margin-left:auto;transition:all .15s}
-.refl-edit-btn:active{background:var(--bg)}
 .refl-others{margin-top:.7rem}
 .refl-other{padding:.55rem .7rem;background:var(--bg);border-radius:.5rem;margin-bottom:.4rem;font-size:.78rem;border-left:3px solid var(--danger)}
 .refl-other .rn{font-weight:600;color:var(--danger);margin-bottom:.1rem;font-size:.7rem}
 
-/* Settings */
 .page{flex:1;overflow-y:auto;padding:1rem;padding-bottom:5rem;-webkit-overflow-scrolling:touch;background:var(--bg)}
 .ss{margin-bottom:1.3rem}
 .ss h3{font-size:.92rem;font-weight:700;margin-bottom:.6rem;display:flex;align-items:center;gap:.35rem;color:var(--txt)}
@@ -218,9 +214,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--txt)}
 .mi .my{font-size:.6rem;color:var(--acc);background:var(--accBg);padding:.12rem .35rem;border-radius:1rem;font-weight:600;border:1px solid var(--accBdr)}
 .ar{display:flex;gap:.4rem;margin-top:.6rem}
 .ar .ii{flex:1;padding:.55rem .65rem;background:var(--bg);border:1px solid var(--bdr);border-radius:.55rem;color:var(--txt);font-size:.84rem;outline:none;font-family:var(--font)}
-.ar .ii:focus{border-color:var(--acc)}
 .si{width:100%;padding:.6rem .7rem;background:var(--bg);border:1px solid var(--bdr);border-radius:.55rem;color:var(--txt);font-size:.86rem;outline:none;font-family:var(--font);margin-bottom:.4rem}
-.si:focus{border-color:var(--acc)}
 
 .copy-dates{max-height:40vh;overflow-y:auto}
 .cdb{width:100%;padding:.6rem .75rem;text-align:left;background:var(--bg);border:1px solid var(--bdr);border-radius:.5rem;color:var(--txt);font-size:.84rem;cursor:pointer;font-family:var(--font);margin-bottom:.3rem;display:flex;align-items:center;justify-content:space-between;transition:all .15s}
@@ -244,7 +238,6 @@ body{font-family:var(--font);background:var(--bg);color:var(--txt)}
 .setup-card .sub{font-size:.68rem;color:var(--txt3);text-align:center;margin-bottom:1.6rem}
 .setup-card label{font-size:.78rem;color:var(--txt2);margin-bottom:.25rem;display:block;font-weight:500}
 .setup-card .inp{width:100%;padding:.65rem .75rem;background:var(--bg);border:1px solid var(--bdr);border-radius:.6rem;color:var(--txt);font-size:.88rem;outline:none;font-family:var(--font);margin-bottom:.6rem}
-.setup-card .inp:focus{border-color:var(--acc)}
 .setup-card .ci{font-family:var(--mono);letter-spacing:.2em;text-transform:uppercase;text-align:center;font-size:1.05rem;font-weight:600}
 .stabs{display:flex;gap:0;margin-bottom:1.1rem;background:var(--bg);border-radius:.55rem;padding:.18rem;border:1px solid var(--bdr)}
 .stab{flex:1;padding:.5rem;border:none;border-radius:.42rem;background:transparent;color:var(--txt3);font-size:.8rem;font-weight:600;cursor:pointer;font-family:var(--font);transition:all .15s}
@@ -255,6 +248,11 @@ body{font-family:var(--font);background:var(--bg);color:var(--txt)}
 .qtags-label{font-size:.68rem;color:var(--txt3);margin-bottom:.2rem;font-weight:500}
 .qtag{padding:.3rem .65rem;border-radius:2rem;border:1px solid var(--bdr);background:var(--bg);color:var(--txt2);font-size:.75rem;font-weight:500;cursor:pointer;font-family:var(--font);transition:all .15s;white-space:nowrap}
 .qtag:active{transform:scale(.95);background:var(--accBg);border-color:var(--accBdr);color:var(--acc)}
+
+/* Loading / Error states */
+.load-screen{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.8rem}
+.load-screen p{font-size:.85rem;color:var(--txt3)}
+.load-screen .retry-btn{padding:.5rem 1.2rem;border:none;border-radius:.5rem;background:var(--acc);color:#fff;font-size:.85rem;font-weight:600;cursor:pointer;font-family:var(--font)}
 
 @media(min-width:640px){
   .member-tabs{display:none}
@@ -267,8 +265,24 @@ body{font-family:var(--font);background:var(--bg);color:var(--txt)}
 }
 `;
 
+/* ─── Toast Component ─── */
+function Toast({ msg, type, onDismiss }) {
+  useEffect(() => {
+    if (type === "ok") { const t = setTimeout(onDismiss, 1200); return () => clearTimeout(t); }
+  }, [type, onDismiss]);
+  if (!msg) return null;
+  return (
+    <div className="toast-wrap">
+      <div className={`toast ${type}`} onClick={type === "fail" ? onDismiss : undefined}>
+        {msg}
+      </div>
+    </div>
+  );
+}
+
 export default function HabitTracker() {
   const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState(false);
   const [phase, setPhase] = useState("setup");
   const [view, setView] = useState("timeline");
   const [setupTab, setSetupTab] = useState("create");
@@ -304,13 +318,18 @@ export default function HabitTracker() {
   const [editingMemberId, setEditingMemberId] = useState(null);
   const [editingMemberName, setEditingMemberName] = useState("");
 
-  // Reflection
   const [reflDraft, setReflDraft] = useState("");
   const [reflEditing, setReflEditing] = useState(false);
   const [reflPub, setReflPub] = useState(true);
 
-  // Recent plan inputs
   const [recentInputs, setRecentInputs] = useState([]);
+
+  // Toast state
+  const [toast, setToast] = useState({ msg: "", type: "ok" });
+  const showToast = (msg, type = "ok") => setToast({ msg, type });
+  const hideToast = () => setToast({ msg: "", type: "ok" });
+
+  const retryRef = useRef(null);
 
   const theme = dark ? DARK : LIGHT;
   const MCOLS = dark ? MCOLS_D : MCOLS_L;
@@ -323,116 +342,199 @@ export default function HabitTracker() {
   const firstH = visHours[0];
   const totalH = visHours.length;
 
-  useEffect(() => {
-    (async () => {
-      // Try local stored config
-      try {
-        const r = await storage.get("ht5-cfg");
-        if (r?.value) {
-          const c = JSON.parse(r.value);
-          setGroupCode(c.code); setMembers(c.members); setCurUser(c.curUser);
-          setSelMember(c.curUser); setGroupName(c.groupName || "时间轴打卡");
-          setEditGroupName(c.groupName || "时间轴打卡");
-          if (c.dark !== undefined) setDark(c.dark);
-          setPhase("app");
-        }
-      } catch {}
-      try {
-        const r = await storage.get("ht5-data", true);
-        if (r?.value) setData(JSON.parse(r.value));
-        else setData(SAMPLE_DATA());
-      } catch { setData(SAMPLE_DATA()); }
-      try {
-        const r = await storage.get("ht5-recent");
-        if (r?.value) setRecentInputs(JSON.parse(r.value));
-      } catch {}
-      setLoaded(true);
-    })();
+  /* ─── Save with feedback ─── */
+  const saveWithFeedback = useCallback(async (fn, successMsg = "✓ 已保存") => {
+    try {
+      await fn();
+      showToast(successMsg, "ok");
+      return true;
+    } catch (e) {
+      showToast("保存失败，点击重试", "fail");
+      retryRef.current = fn;
+      return false;
+    }
   }, []);
 
-  const saveData = useCallback(async d => { setData(d); try { await storage.set("ht5-data", JSON.stringify(d), true); } catch {} }, []);
+  /* ─── Storage operations with local cache ─── */
+  const saveData = useCallback(async (d, silent = false) => {
+    setData(d);
+    LC.set("data", d); // cache locally immediately
+    const fn = async () => { await storage.set("ht5-data", JSON.stringify(d), true); };
+    if (silent) { try { await fn(); } catch {} }
+    else { await saveWithFeedback(fn); }
+  }, [saveWithFeedback]);
+
   const saveCfg = useCallback(async (overrides = {}) => {
     const c = { code: groupCode, members, curUser, groupName, dark, ...overrides };
-    try { await storage.set("ht5-cfg", JSON.stringify(c)); } catch {}
-    try { await storage.set("ht5-cfg", JSON.stringify(c), true); } catch {}
+    LC.set("cfg", c); // cache locally
+    try {
+      await storage.set("ht5-cfg", JSON.stringify(c));
+      await storage.set("ht5-cfg", JSON.stringify(c), true);
+    } catch {}
   }, [groupCode, members, curUser, groupName, dark]);
 
+  /* ─── Load data ─── */
+  const loadApp = useCallback(async () => {
+    setLoadError(false);
+    // 1. Try local cache first for instant display
+    const localCfg = LC.get("cfg");
+    const localData = LC.get("data");
+    let entered = false;
+
+    if (localCfg && localCfg.code && localCfg.curUser) {
+      setGroupCode(localCfg.code); setMembers(localCfg.members || []);
+      setCurUser(localCfg.curUser); setSelMember(localCfg.curUser);
+      setGroupName(localCfg.groupName || "时间轴打卡");
+      setEditGroupName(localCfg.groupName || "时间轴打卡");
+      if (localCfg.dark !== undefined) setDark(localCfg.dark);
+      if (localData) setData(localData);
+      setPhase("app"); entered = true;
+    }
+
+    // 2. Then sync from Firebase in background
+    try {
+      const r = await storage.get("ht5-cfg");
+      if (r?.value) {
+        const c = JSON.parse(r.value);
+        setGroupCode(c.code); setMembers(c.members || []);
+        setCurUser(c.curUser); setSelMember(c.curUser);
+        setGroupName(c.groupName || "时间轴打卡");
+        setEditGroupName(c.groupName || "时间轴打卡");
+        if (c.dark !== undefined) setDark(c.dark);
+        LC.set("cfg", c);
+        if (!entered) setPhase("app");
+        entered = true;
+      }
+    } catch {
+      if (!entered) { setLoadError(true); setLoaded(true); return; }
+    }
+
+    // 3. Load shared data (plans)
+    try {
+      const r = await storage.get("ht5-data", true);
+      if (r?.value) { const d = JSON.parse(r.value); setData(d); LC.set("data", d); }
+      else if (!localData) { const d = SAMPLE_DATA(); setData(d); LC.set("data", d); }
+    } catch {
+      if (!localData) setData(SAMPLE_DATA());
+    }
+
+    // 4. Load recent inputs
+    try {
+      const r = await storage.get("ht5-recent");
+      if (r?.value) setRecentInputs(JSON.parse(r.value));
+    } catch {}
+
+    setLoaded(true);
+  }, []);
+
+  useEffect(() => { loadApp(); }, [loadApp]);
+
+  /* ─── Handlers ─── */
   const handleCreate = async () => {
     if (!setupName.trim()) return;
     const code = genCode(); const mid = "m1";
-    storage.setGroup(code);
     const m = [{ id: mid, name: setupName.trim() }];
+    const cfg = { code, members: m, curUser: mid, groupName: "时间轴打卡", dark };
     setGroupCode(code); setMembers(m); setCurUser(mid); setSelMember(mid);
     setGroupName("时间轴打卡"); setEditGroupName("时间轴打卡");
-    const cfg = { code, members: m, curUser: mid, groupName: "时间轴打卡", dark };
-    try { await storage.set("ht5-cfg", JSON.stringify(cfg)); } catch {}
-    try { await storage.set("ht5-cfg", JSON.stringify(cfg), true); } catch {}
-    await saveData(SAMPLE_DATA()); setPhase("app");
+    LC.set("cfg", cfg);
+    try {
+      await storage.set("ht5-cfg", JSON.stringify(cfg));
+      await storage.set("ht5-cfg", JSON.stringify(cfg), true);
+    } catch {}
+    await saveData(SAMPLE_DATA(), true); setPhase("app");
+    showToast("✓ 打卡组已创建", "ok");
   };
+
   const handleJoin = async () => {
     if (!joinName.trim() || !joinCode.trim()) return;
     const jc = joinCode.trim().toUpperCase();
-    storage.setGroup(jc);
     const name = joinName.trim();
-    // Try to load existing group config from shared storage
+
+    // Try to load existing group from Firebase
     let existingCfg = null;
     try {
+      // Temporarily set group for shared read
+      LC.set("tmpGroup", jc);
+      const oldGroup = LC.get("cfg")?.code;
+      // Read shared cfg
       const r = await storage.get("ht5-cfg", true);
       if (r?.value) existingCfg = JSON.parse(r.value);
     } catch {}
-    
+
     if (existingCfg && existingCfg.code === jc) {
-      // Check if nickname already exists → match to existing member
       const existingMember = existingCfg.members.find(m => m.name === name);
       if (existingMember) {
-        // Returning user - bind to existing identity
+        // Returning user
+        const cfg = { ...existingCfg, curUser: existingMember.id };
         setGroupCode(jc); setMembers(existingCfg.members); setCurUser(existingMember.id); setSelMember(existingMember.id);
         setGroupName(existingCfg.groupName || "时间轴打卡"); setEditGroupName(existingCfg.groupName || "时间轴打卡");
-        const cfg = { ...existingCfg, curUser: existingMember.id };
+        LC.set("cfg", cfg);
         try { await storage.set("ht5-cfg", JSON.stringify(cfg)); } catch {}
         setPhase("app");
+        showToast("✓ 欢迎回来，" + name, "ok");
       } else {
-        // New member joining
+        // New member
         const mid = "m" + (existingCfg.members.length + 1);
         const nm = [...existingCfg.members, { id: mid, name }];
+        const cfg = { ...existingCfg, members: nm, curUser: mid };
         setGroupCode(jc); setMembers(nm); setCurUser(mid); setSelMember(mid);
         setGroupName(existingCfg.groupName || "时间轴打卡"); setEditGroupName(existingCfg.groupName || "时间轴打卡");
-        const cfg = { ...existingCfg, members: nm, curUser: mid };
-        try { await storage.set("ht5-cfg", JSON.stringify(cfg)); } catch {}
-        try { await storage.set("ht5-cfg", JSON.stringify(cfg), true); } catch {}
+        LC.set("cfg", cfg);
+        try {
+          await storage.set("ht5-cfg", JSON.stringify(cfg));
+          await storage.set("ht5-cfg", JSON.stringify(cfg), true);
+        } catch {}
         setPhase("app");
+        showToast("✓ 加入成功", "ok");
       }
     } else {
-      // No existing group found
+      // No group found - might be first time or network issue
       const mid = "m1";
       const nm = [{ id: mid, name }];
-      setGroupCode(jc); setMembers(nm); setCurUser(mid); setSelMember(mid);
       const cfg = { code: jc, members: nm, curUser: mid, groupName: "时间轴打卡", dark };
-      try { await storage.set("ht5-cfg", JSON.stringify(cfg)); } catch {}
-      try { await storage.set("ht5-cfg", JSON.stringify(cfg), true); } catch {}
+      setGroupCode(jc); setMembers(nm); setCurUser(mid); setSelMember(mid);
+      LC.set("cfg", cfg);
+      try {
+        await storage.set("ht5-cfg", JSON.stringify(cfg));
+        await storage.set("ht5-cfg", JSON.stringify(cfg), true);
+      } catch {}
+      await saveData(SAMPLE_DATA(), true);
       setPhase("app");
+      showToast("✓ 打卡组已创建", "ok");
     }
+
+    // Load shared data
+    try {
+      const r = await storage.get("ht5-data", true);
+      if (r?.value) { const d = JSON.parse(r.value); setData(d); LC.set("data", d); }
+    } catch {}
   };
+
   const handleAddMember = async () => {
     if (!addName.trim()) return;
     const mid = "m" + (members.length + 1);
     const nm = [...members, { id: mid, name: addName.trim() }];
     setMembers(nm); setAddName("");
     await saveCfg({ members: nm });
+    showToast("✓ 已添加", "ok");
   };
   const renameMember = async (mid, newName) => {
     if (!newName.trim()) return;
     const nm = members.map(m => m.id === mid ? { ...m, name: newName.trim() } : m);
     setMembers(nm); setEditingMemberId(null); setEditingMemberName("");
     await saveCfg({ members: nm });
+    showToast("✓ 昵称已修改", "ok");
   };
-
   const toggleDark = async () => {
     const nd = !dark; setDark(nd); await saveCfg({ dark: nd });
   };
 
   const getMemberDay = (date, mid) => data[date]?.[mid] || { plans: [], reflection: { text: "", isPublic: true, sent: false } };
-  const setMemberDay = (date, mid, dayData) => { saveData({ ...data, [date]: { ...data[date], [mid]: dayData } }); };
+  const setMemberDay = (date, mid, dayData) => {
+    const nd = { ...data, [date]: { ...data[date], [mid]: dayData } };
+    saveData(nd);
+  };
 
   const openAddPlan = (mid, startH) => {
     setPmContent(""); setPmStart(startH); setPmEnd(Math.min(startH + 2, 25));
@@ -447,7 +549,6 @@ export default function HabitTracker() {
     if (planId) plans = md.plans.map(p => p.id === planId ? { ...p, start: pmStart, end: pmEnd, content } : p);
     else plans = [...md.plans, { id: genId(), start: pmStart, end: pmEnd, content, done: false, actual: "" }];
     setMemberDay(selDate, memberId, { ...md, plans }); setPlanModal(null);
-    // Update recent inputs
     const updated = [content, ...recentInputs.filter(r => r !== content)].slice(0, 5);
     setRecentInputs(updated);
     try { storage.set("ht5-recent", JSON.stringify(updated)); } catch {}
@@ -468,7 +569,6 @@ export default function HabitTracker() {
     setMemberDay(selDate, curUser, { ...dest, plans: [...dest.plans, ...copied] }); setCopyModal(false);
   };
 
-  // Reflection actions
   const myDay = useMemo(() => getMemberDay(selDate, curUser), [data, selDate, curUser]);
   const sendReflection = () => {
     if (!reflDraft.trim()) return;
@@ -476,14 +576,8 @@ export default function HabitTracker() {
     setMemberDay(selDate, curUser, { ...md, reflection: { text: reflDraft.trim(), isPublic: reflPub, sent: true } });
     setReflEditing(false);
   };
-  const startEditReflection = () => {
-    setReflDraft(myDay.reflection.text); setReflPub(myDay.reflection.isPublic); setReflEditing(true);
-  };
-
-  // When selDate or curUser changes, reset reflection editing state
-  useEffect(() => {
-    setReflEditing(false); setReflDraft("");
-  }, [selDate, curUser]);
+  const startEditReflection = () => { setReflDraft(myDay.reflection.text); setReflPub(myDay.reflection.isPublic); setReflEditing(true); };
+  useEffect(() => { setReflEditing(false); setReflDraft(""); }, [selDate, curUser]);
 
   const doExport = () => {
     let csv = "日期,时段,预期,完成,实际\n";
@@ -496,15 +590,33 @@ export default function HabitTracker() {
     const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob); const a = document.createElement("a");
     a.href = url; a.download = `打卡记录_${expStart}_${expEnd}.csv`; a.click(); URL.revokeObjectURL(url);
+    showToast("✓ 已导出", "ok");
   };
 
   const navDates = useMemo(() => { const arr = []; for (let i = -3; i <= 3; i++) { const d = new Date(); d.setDate(d.getDate() + i); arr.push(dk(d)); } return arr; }, []);
   const now = new Date(); const nowH = now.getHours() + now.getMinutes() / 60;
 
-  if (!loaded) return <div className="app"><style>{makeCSS(theme)}</style><div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center"}}><p style={{color:"var(--txt3)"}}>加载中...</p></div></div>;
+  /* ─── Loading / Error states ─── */
+  if (!loaded) return (
+    <div className="app"><style>{makeCSS(theme)}</style>
+      <div className="load-screen"><p>加载中...</p></div>
+    </div>
+  );
+  if (loadError && phase === "setup") return (
+    <div className="app"><style>{makeCSS(theme)}</style>
+      <div className="load-screen">
+        <p>网络连接失败</p>
+        <button className="retry-btn" onClick={loadApp}>重试</button>
+        <p style={{fontSize:".7rem",color:"var(--txt3)",marginTop:".5rem"}}>或者创建 / 加入打卡组</p>
+        <button className="bs2" style={{marginTop:".3rem"}} onClick={()=>setLoadError(false)}>继续</button>
+      </div>
+    </div>
+  );
 
+  /* ─── Setup ─── */
   if (phase === "setup") return (
     <div className="app"><style>{makeCSS(theme)}</style>
+      <Toast msg={toast.msg} type={toast.type} onDismiss={hideToast} />
       <div className="setup-bg"><div className="setup-card">
         <h2>时间轴打卡</h2><p className="sub">和朋友一起规划每一天</p>
         <div className="stabs">
@@ -528,8 +640,10 @@ export default function HabitTracker() {
     </div>
   );
 
+  /* ─── Main App ─── */
   return (
     <div className="app"><style>{makeCSS(theme)}</style>
+      <Toast msg={toast.msg} type={toast.type} onDismiss={()=>{ hideToast(); if (retryRef.current && toast.type==="fail") { const fn=retryRef.current; retryRef.current=null; saveWithFeedback(fn); }}} />
 
       <div className="topbar">
         <h1>{groupName}</h1>
@@ -588,32 +702,18 @@ export default function HabitTracker() {
                         <div className="tl-gridline" style={{top:totalH*H*2}} />
                         {visHours.map((h,i)=>(<div key={`e${h}`} className="tl-empty-slot" style={{top:i*H*2,height:H*2}} onClick={()=>m.id===curUser&&openAddPlan(m.id,h)} />))}
                         {(()=>{
-                          // Calculate overlap columns for side-by-side layout
                           const plans = [...md.plans].sort((a,b)=>a.start-b.start||a.end-b.end);
-                          const cols = []; // each plan gets {col, totalCols}
-                          const active = []; // tracks which columns are occupied
-                          const layout = {};
+                          const active = []; const layout = {};
                           plans.forEach(p => {
-                            // Free columns that ended
-                            for (let c = active.length - 1; c >= 0; c--) {
-                              if (active[c] && active[c].end <= p.start) active[c] = null;
-                            }
-                            // Find first free column
+                            for (let c = active.length - 1; c >= 0; c--) { if (active[c] && active[c].end <= p.start) active[c] = null; }
                             let placed = -1;
-                            for (let c = 0; c < active.length; c++) {
-                              if (!active[c]) { active[c] = p; placed = c; break; }
-                            }
+                            for (let c = 0; c < active.length; c++) { if (!active[c]) { active[c] = p; placed = c; break; } }
                             if (placed === -1) { placed = active.length; active.push(p); }
                             layout[p.id] = { col: placed };
                           });
-                          // Determine total overlapping columns for each plan
                           plans.forEach(p => {
                             let maxCol = layout[p.id].col;
-                            plans.forEach(q => {
-                              if (p.id !== q.id && p.start < q.end && q.start < p.end) {
-                                maxCol = Math.max(maxCol, layout[q.id].col);
-                              }
-                            });
+                            plans.forEach(q => { if (p.id !== q.id && p.start < q.end && q.start < p.end) maxCol = Math.max(maxCol, layout[q.id].col); });
                             layout[p.id].totalCols = maxCol + 1;
                           });
                           return plans.map(p => {
@@ -621,18 +721,11 @@ export default function HabitTracker() {
                             const height = Math.max((p.end - p.start) * H * 2, H * 2);
                             const isDone = p.done; const hasActual = p.actual && !p.done;
                             const { col: pcol, totalCols } = layout[p.id];
-                            const widthPct = 100 / totalCols;
-                            const leftPct = pcol * widthPct;
+                            const widthPct = 100 / totalCols; const leftPct = pcol * widthPct;
                             return (
                               <div key={p.id} className={`plan-card ${isDone?"done":""} ${hasActual?"changed":""}`}
-                                style={{
-                                  top, height: height - 4,
-                                  left: `calc(${leftPct}% + 3px)`,
-                                  width: `calc(${widthPct}% - 6px)`,
-                                  right: "auto",
-                                  background: isDone ? "var(--okBg)" : hasActual ? "var(--warnBg)" : col + "14",
-                                  borderLeftColor: isDone ? "var(--ok)" : col,
-                                }}
+                                style={{ top, height: height - 4, left: `calc(${leftPct}% + 3px)`, width: `calc(${widthPct}% - 6px)`, right: "auto",
+                                  background: isDone ? "var(--okBg)" : hasActual ? "var(--warnBg)" : col + "14", borderLeftColor: isDone ? "var(--ok)" : col }}
                                 onClick={e => { e.stopPropagation(); if (m.id === curUser) { setDetailModal({ memberId: m.id, plan: p }); setDmActual(p.actual || ""); } }}>
                                 <div className="pc-time">{fmtT(p.start)}-{fmtT(p.end)}</div>
                                 <div className="pc-content">{p.content}</div>
@@ -654,20 +747,16 @@ export default function HabitTracker() {
             </div>
           </div>
 
-          {/* Reflection */}
           <div className="refl-section">
             <div className="refl-title">📝 今日总结</div>
-
             {myDay.reflection.sent && !reflEditing ? (
-              <>
-                <div className="refl-published">
-                  <div className="refl-pub-text">{myDay.reflection.text}</div>
-                  <div className="refl-pub-meta">
-                    <span>{myDay.reflection.isPublic ? "🔓 公开" : "🔒 仅自己"}</span>
-                    <button className="refl-edit-btn" onClick={startEditReflection}>编辑</button>
-                  </div>
+              <div className="refl-published">
+                <div className="refl-pub-text">{myDay.reflection.text}</div>
+                <div className="refl-pub-meta">
+                  <span>{myDay.reflection.isPublic ? "🔓 公开" : "🔒 仅自己"}</span>
+                  <button className="refl-edit-btn" onClick={startEditReflection}>编辑</button>
                 </div>
-              </>
+              </div>
             ) : (
               <>
                 <div className="refl-vis">
@@ -675,15 +764,12 @@ export default function HabitTracker() {
                   <button className={`refl-vis-btn ${!reflPub?"on":""}`} onClick={()=>setReflPub(false)}>🔒 仅自己</button>
                 </div>
                 <div className="refl-input-area">
-                  <textarea className="refl-ta" value={reflDraft} onChange={e=>setReflDraft(e.target.value)}
-                    placeholder="写下今天的心得总结..." />
+                  <textarea className="refl-ta" value={reflDraft} onChange={e=>setReflDraft(e.target.value)} placeholder="写下今天的心得总结..." />
                   <button className="refl-send" disabled={!reflDraft.trim()} onClick={sendReflection}>↑</button>
                 </div>
                 {reflEditing && <button className="bs2" style={{width:"100%",marginTop:".4rem",fontSize:".78rem"}} onClick={()=>setReflEditing(false)}>取消编辑</button>}
               </>
             )}
-
-            {/* Others' reflections */}
             <div className="refl-others">
               {sortedMembers.filter(m=>m.id!==curUser).map(m=>{
                 const md=getMemberDay(selDate,m.id);
@@ -703,9 +789,8 @@ export default function HabitTracker() {
               <input className="si" value={editGroupName} onChange={e=>setEditGroupName(e.target.value)} placeholder="给你的打卡组起个名字" />
               <button className="bp" style={{width:"100%"}} onClick={async()=>{
                 const n=editGroupName.trim()||"时间轴打卡"; setGroupName(n); setEditGroupName(n);
-                await saveCfg({groupName:n});
-                const btn=document.getElementById("save-gn-btn"); if(btn){btn.textContent="✓ 已保存"; setTimeout(()=>{btn.textContent="保存组名"},1500);}
-              }} id="save-gn-btn">保存组名</button>
+                await saveCfg({groupName:n}); showToast("✓ 组名已保存","ok");
+              }}>保存组名</button>
             </div>
           </div>
 
@@ -728,7 +813,7 @@ export default function HabitTracker() {
                     <div className="md" style={{background:MCOLS[i%MCOLS.length]}} />
                     {editingMemberId===m.id ? (
                       <div style={{flex:1,display:"flex",gap:".3rem",alignItems:"center"}}>
-                        <input className="ii" style={{flex:1}} value={editingMemberName} onChange={e=>setEditingMemberName(e.target.value)}
+                        <input className="ar ii" style={{flex:1}} value={editingMemberName} onChange={e=>setEditingMemberName(e.target.value)}
                           placeholder="输入新昵称" autoFocus onKeyDown={e=>{if(e.key==="Enter")renameMember(m.id,editingMemberName)}} />
                         <button className="bp" style={{width:"auto",padding:".35rem .6rem",flex:"none",fontSize:".72rem"}} onClick={()=>renameMember(m.id,editingMemberName)}>保存</button>
                         <button className="bs2" style={{padding:".35rem .5rem",fontSize:".72rem"}} onClick={()=>setEditingMemberId(null)}>取消</button>
@@ -756,7 +841,7 @@ export default function HabitTracker() {
             <div className="sc">
               <div style={{display:"flex",alignItems:"center",gap:".5rem"}}>
                 <span style={{fontFamily:"var(--mono)",fontSize:"1.2rem",fontWeight:700,letterSpacing:".1em",color:"var(--acc)"}}>{groupCode}</span>
-                <button className="bs2" style={{fontSize:".7rem",padding:".3rem .6rem"}} onClick={()=>navigator.clipboard?.writeText(groupCode)}>复制</button>
+                <button className="bs2" style={{fontSize:".7rem",padding:".3rem .6rem"}} onClick={()=>{navigator.clipboard?.writeText(groupCode);showToast("✓ 已复制","ok")}}>复制</button>
               </div>
               <p style={{fontSize:".7rem",color:"var(--txt3)",marginTop:".35rem"}}>分享邀请码给朋友即可加入</p>
             </div>
@@ -766,7 +851,7 @@ export default function HabitTracker() {
             <h3>📱 换设备登录</h3>
             <div className="sc">
               <p style={{fontSize:".78rem",color:"var(--txt2)",lineHeight:1.6}}>
-                换了浏览器或设备？打开网址后选「加入打卡组」，输入邀请码 + <strong>之前用过的昵称</strong>，系统会自动恢复你的身份，不会创建重复成员。
+                换了浏览器或设备？打开网址后选「加入打卡组」，输入邀请码 + <strong>之前用过的昵称</strong>，系统会自动恢复你的身份。
               </p>
             </div>
           </div>
@@ -787,7 +872,9 @@ export default function HabitTracker() {
               <button className="bdel" style={{width:"100%"}} onClick={async()=>{
                 if(!confirm("⚠️ 确定要清除所有数据吗？\n\n包括所有打卡记录、成员信息、小组配置。")) return;
                 if(!confirm("再次确认：此操作不可撤销，所有数据将永久删除。\n\n确定继续？")) return;
-                setData({});setPhase("setup");try{await storage.delete("ht5-cfg");await storage.delete("ht5-data",true);await storage.delete("ht5-cfg",true)}catch{}
+                setData({});LC.del("cfg");LC.del("data");setPhase("setup");
+                try{await storage.delete("ht5-cfg");await storage.delete("ht5-data",true);await storage.delete("ht5-cfg",true)}catch{}
+                showToast("✓ 已清除","ok");
               }}>清除所有数据并重置</button>
             </div>
           </div>
@@ -799,17 +886,13 @@ export default function HabitTracker() {
         <button className={`bb-btn ${view==="settings"?"on":""}`} onClick={()=>setView("settings")}><span className="bb-icon">⚙️</span>设置</button>
       </div>
 
-      {/* Modals */}
       {planModal&&<div className="modal-bg" onClick={()=>setPlanModal(null)}><div className="modal" onClick={e=>e.stopPropagation()}>
         <h3>{planModal.planId?"编辑计划":"添加计划"}</h3>
-        <label>时间段 <span style={{fontSize:".65rem",color:"var(--txt3)",fontWeight:400}}>可手动输入精确时间如 17:13</span></label>
+        <label>时间段 <span style={{fontSize:".65rem",color:"var(--txt3)",fontWeight:400}}>可手动输入如 17:13</span></label>
         <div className="time-row">
           <div style={{flex:1,display:"flex",flexDirection:"column",gap:".3rem"}}>
             <input className="inp" style={{marginBottom:0,fontFamily:"var(--mono)",textAlign:"center",fontSize:".9rem"}}
-              value={pmStartStr} onChange={e=>{
-                setPmStartStr(e.target.value);
-                const v=parseTimeStr(e.target.value); if(v!==null) setPmStart(v);
-              }} placeholder="07:00" />
+              value={pmStartStr} onChange={e=>{setPmStartStr(e.target.value);const v=parseTimeStr(e.target.value);if(v!==null)setPmStart(v);}} placeholder="07:00" />
             <div style={{display:"flex",flexWrap:"wrap",gap:".2rem"}}>
               {[7,9,11,13,15,17,19,21].map(h=>(
                 <button key={h} className="qtag" style={{padding:".15rem .4rem",fontSize:".65rem"}}
@@ -820,10 +903,7 @@ export default function HabitTracker() {
           <span style={{color:"var(--txt3)",flexShrink:0,padding:"0 .2rem"}}>至</span>
           <div style={{flex:1,display:"flex",flexDirection:"column",gap:".3rem"}}>
             <input className="inp" style={{marginBottom:0,fontFamily:"var(--mono)",textAlign:"center",fontSize:".9rem"}}
-              value={pmEndStr} onChange={e=>{
-                setPmEndStr(e.target.value);
-                const v=parseTimeStr(e.target.value); if(v!==null) setPmEnd(v);
-              }} placeholder="09:00" />
+              value={pmEndStr} onChange={e=>{setPmEndStr(e.target.value);const v=parseTimeStr(e.target.value);if(v!==null)setPmEnd(v);}} placeholder="09:00" />
             <div style={{display:"flex",flexWrap:"wrap",gap:".2rem"}}>
               {[9,11,13,15,17,19,21,23].map(h=>(
                 <button key={h} className="qtag" style={{padding:".15rem .4rem",fontSize:".65rem"}}
@@ -834,13 +914,8 @@ export default function HabitTracker() {
         </div>
         <label>计划内容</label>
         {recentInputs.length > 0 && !planModal.planId && (
-          <div>
-            <div className="qtags-label">最近使用</div>
-            <div className="qtags">
-              {recentInputs.map((r, i) => (
-                <button key={i} className="qtag" onClick={() => setPmContent(r)}>{r}</button>
-              ))}
-            </div>
+          <div><div className="qtags-label">最近使用</div>
+            <div className="qtags">{recentInputs.map((r, i) => (<button key={i} className="qtag" onClick={() => setPmContent(r)}>{r}</button>))}</div>
           </div>
         )}
         <textarea className="inp" value={pmContent} onChange={e=>setPmContent(e.target.value)} placeholder="这个时段你打算做什么？" />
