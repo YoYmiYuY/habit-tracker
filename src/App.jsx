@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import storage from './storage'
+import storage from './storage';
 const H = 36;
 const HOURS = Array.from({length:18}, (_,i) => i+7); // 7,8,...,24 → 7:00 to 次日01:00
 const LATE = Array.from({length:6}, (_,i) => i+1); // 1,2,3,4,5,6
@@ -322,53 +322,9 @@ export default function HabitTracker() {
   const firstH = visHours[0];
   const totalH = visHours.length;
 
-  // Hash param helpers (hash survives redirects unlike query params)
-  const getHashParams = () => {
-    const h = window.location.hash.slice(1); // remove #
-    const p = new URLSearchParams(h);
-    return { group: p.get("g"), user: p.get("u") };
-  };
-  const setHashParams = (code, uid) => {
-    window.location.hash = `g=${code}&u=${uid}`;
-  };
-
   useEffect(() => {
     (async () => {
-      // 1. Try hash params first (bookmark / home screen link)
-      const hp = getHashParams();
-      if (hp.group && hp.user) {
-        try {
-          const r = await storage.get("ht5-cfg", true);
-          if (r?.value) {
-            const c = JSON.parse(r.value);
-            if (c.code === hp.group) {
-              const memberExists = c.members.some(m => m.id === hp.user);
-              if (memberExists) {
-                setGroupCode(c.code); setMembers(c.members); setCurUser(hp.user);
-                setSelMember(hp.user); setGroupName(c.groupName || "时间轴打卡");
-                setEditGroupName(c.groupName || "时间轴打卡");
-                if (c.dark !== undefined) setDark(c.dark);
-                setPhase("app");
-                try {
-                  const rd = await storage.get("ht5-data", true);
-                  if (rd?.value) setData(JSON.parse(rd.value));
-                  else setData(SAMPLE_DATA());
-                } catch { setData(SAMPLE_DATA()); }
-                try {
-                  const rr = await storage.get("ht5-recent");
-                  if (rr?.value) setRecentInputs(JSON.parse(rr.value));
-                } catch {}
-                // Save to local so next time no hash needed
-                try { await storage.set("ht5-cfg", JSON.stringify({...c, curUser: hp.user})); } catch {}
-                setLoaded(true);
-                return;
-              }
-            }
-          }
-        } catch {}
-      }
-
-      // 2. Fall back to stored config (local)
+      // Try local stored config
       try {
         const r = await storage.get("ht5-cfg");
         if (r?.value) {
@@ -377,7 +333,6 @@ export default function HabitTracker() {
           setSelMember(c.curUser); setGroupName(c.groupName || "时间轴打卡");
           setEditGroupName(c.groupName || "时间轴打卡");
           if (c.dark !== undefined) setDark(c.dark);
-          setHashParams(c.code, c.curUser);
           setPhase("app");
         }
       } catch {}
@@ -409,9 +364,8 @@ export default function HabitTracker() {
     setGroupName("时间轴打卡"); setEditGroupName("时间轴打卡");
     const cfg = { code, members: m, curUser: mid, groupName: "时间轴打卡", dark };
     try { await storage.set("ht5-cfg", JSON.stringify(cfg)); } catch {}
-    // Also save as shared so other devices can find it
     try { await storage.set("ht5-cfg", JSON.stringify(cfg), true); } catch {}
-    await saveData(SAMPLE_DATA()); setHashParams(code, mid); setPhase("app");
+    await saveData(SAMPLE_DATA()); setPhase("app");
   };
   const handleJoin = async () => {
     if (!joinName.trim() || !joinCode.trim()) return;
@@ -433,7 +387,7 @@ export default function HabitTracker() {
         setGroupName(existingCfg.groupName || "时间轴打卡"); setEditGroupName(existingCfg.groupName || "时间轴打卡");
         const cfg = { ...existingCfg, curUser: existingMember.id };
         try { await storage.set("ht5-cfg", JSON.stringify(cfg)); } catch {}
-        setHashParams(jc, existingMember.id); setPhase("app");
+        setPhase("app");
       } else {
         // New member joining
         const mid = "m" + (existingCfg.members.length + 1);
@@ -443,17 +397,17 @@ export default function HabitTracker() {
         const cfg = { ...existingCfg, members: nm, curUser: mid };
         try { await storage.set("ht5-cfg", JSON.stringify(cfg)); } catch {}
         try { await storage.set("ht5-cfg", JSON.stringify(cfg), true); } catch {}
-        setHashParams(jc, mid); setPhase("app");
+        setPhase("app");
       }
     } else {
-      // No existing group found - create new join entry
+      // No existing group found
       const mid = "m1";
       const nm = [{ id: mid, name }];
       setGroupCode(jc); setMembers(nm); setCurUser(mid); setSelMember(mid);
       const cfg = { code: jc, members: nm, curUser: mid, groupName: "时间轴打卡", dark };
       try { await storage.set("ht5-cfg", JSON.stringify(cfg)); } catch {}
       try { await storage.set("ht5-cfg", JSON.stringify(cfg), true); } catch {}
-      setHashParams(jc, mid); setPhase("app");
+      setPhase("app");
     }
   };
   const handleAddMember = async () => {
@@ -565,6 +519,7 @@ export default function HabitTracker() {
           <label>你的昵称</label>
           <input className="inp" value={joinName} onChange={e=>setJoinName(e.target.value)} placeholder="输入你的昵称" />
           <button className="bp" style={{width:"100%"}} onClick={handleJoin}>加入 →</button>
+          <p className="shint">已有账号？输入之前的昵称即可恢复身份</p>
         </>)}
       </div></div>
     </div>
@@ -804,17 +759,11 @@ export default function HabitTracker() {
           </div>
 
           <div className="ss">
-            <h3>🔗 我的专属链接</h3>
+            <h3>📱 换设备登录</h3>
             <div className="sc">
-              <p style={{fontSize:".75rem",color:"var(--txt2)",marginBottom:".4rem"}}>用这个链接添加到手机主屏幕，下次打开自动登录</p>
-              <div style={{padding:".5rem",background:"var(--bg)",borderRadius:".4rem",fontSize:".7rem",fontFamily:"var(--mono)",wordBreak:"break-all",color:"var(--txt3)",marginBottom:".4rem"}}>
-                {typeof window !== "undefined" ? `${window.location.origin}${window.location.pathname}#g=${groupCode}&u=${curUser}` : ""}
-              </div>
-              <button className="bp" style={{width:"100%"}} onClick={()=>{
-                const link = `${window.location.origin}${window.location.pathname}#g=${groupCode}&u=${curUser}`;
-                navigator.clipboard?.writeText(link);
-              }}>复制我的链接</button>
-              <p style={{fontSize:".68rem",color:"var(--txt3)",marginTop:".35rem"}}>换浏览器/设备也可以用邀请码 + 昵称重新登录（不会创建重复身份）</p>
+              <p style={{fontSize:".78rem",color:"var(--txt2)",lineHeight:1.6}}>
+                换了浏览器或设备？打开网址后选「加入打卡组」，输入邀请码 + <strong>之前用过的昵称</strong>，系统会自动恢复你的身份，不会创建重复成员。
+              </p>
             </div>
           </div>
 
