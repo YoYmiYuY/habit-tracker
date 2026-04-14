@@ -7,17 +7,7 @@ const getUid = () => {
   return uid;
 };
 
-const getGroup = () => {
-  // 优先从 URL 参数读取 group code
-  const params = new URLSearchParams(window.location.search);
-  const urlGroup = params.get('g');
-  if (urlGroup) {
-    localStorage.setItem('ht-group', urlGroup);
-    return urlGroup;
-  }
-  return localStorage.getItem('ht-group') || '';
-};
-
+const getGroup = () => localStorage.getItem('ht-group') || '';
 const setGroup = (code) => localStorage.setItem('ht-group', code);
 
 const storage = {
