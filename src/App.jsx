@@ -325,6 +325,7 @@ export default function HabitTracker(){
     setLoadError(false);
     const localCfg=LC.get("cfg");const localData=LC.get("data");let entered=false;
     if(localCfg&&localCfg.code&&localCfg.curUser){
+      storage.setGroup(localCfg.code);
       setGroupCode(localCfg.code);setMembers(localCfg.members||[]);
       setCurUser(localCfg.curUser);setSelMember(localCfg.curUser);
       setGroupName(localCfg.groupName||"时间轴打卡");setEditGroupName(localCfg.groupName||"时间轴打卡");
@@ -335,6 +336,7 @@ export default function HabitTracker(){
     try{
       const r=await storage.get("ht5-cfg");
       if(r?.value){const c=JSON.parse(r.value);
+        storage.setGroup(c.code);
         setGroupCode(c.code);setMembers(c.members||[]);setCurUser(c.curUser);setSelMember(c.curUser);
         setGroupName(c.groupName||"时间轴打卡");setEditGroupName(c.groupName||"时间轴打卡");
         if(c.dark!==undefined)setDark(c.dark);LC.set("cfg",c);
@@ -353,6 +355,7 @@ export default function HabitTracker(){
   const handleCreate=async()=>{
     if(!setupName.trim())return;
     const code=genCode();const mid="m1";
+    storage.setGroup(code);
     const m=[{id:mid,name:setupName.trim()}];
     const cfg={code,members:m,curUser:mid,groupName:"时间轴打卡",dark};
     setGroupCode(code);setMembers(m);setCurUser(mid);setSelMember(mid);
@@ -367,6 +370,7 @@ export default function HabitTracker(){
   const handleJoin=async()=>{
     if(!joinName.trim()||!joinCode.trim())return;
     const jc=joinCode.trim().toUpperCase();const name=joinName.trim();
+    storage.setGroup(jc);
     let existingCfg=null;
     try{const r=await storage.get("ht5-cfg",true);if(r?.value)existingCfg=JSON.parse(r.value)}catch{}
 
@@ -439,20 +443,19 @@ export default function HabitTracker(){
 
   // Fix #3: export same day works
   const doExport=()=>{
-    let csv="日期,时段,预期,完成,实际\n";
+    const rows=[];
     const s=new Date(expStart+"T00:00:00");const e=new Date(expEnd+"T00:00:00");
-    let hasData=false;
+    if(isNaN(s.getTime())||isNaN(e.getTime())){showToast("日期格式有误","fail");return}
     for(let d=new Date(s);d<=e;d.setDate(d.getDate()+1)){
       const key=dk(d);const md=getMemberDay(key,curUser);
-      if(md.plans.length===0){csv+=`${key},无计划,,,\n`;continue}
-      hasData=true;
-      md.plans.forEach(p=>{csv+=`${key},${fmtT(p.start)}-${fmtT(p.end)},${p.content},${p.done?"是":"否"},${p.actual||(p.done?p.content:"")}\n`});
+      md.plans.forEach(p=>{rows.push(`${key},${fmtT(p.start)}-${fmtT(p.end)},${p.content},${p.done?"是":"否"},${p.actual||(p.done?p.content:"")}`)});
     }
-    if(!hasData){showToast("所选日期范围内没有记录","fail");return}
+    if(rows.length===0){showToast("所选日期范围内没有打卡记录","fail");return}
+    const csv="日期,时段,预期,完成,实际\n"+rows.join("\n")+"\n";
     const blob=new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8"});
     const url=URL.createObjectURL(blob);const a=document.createElement("a");
     a.href=url;a.download=`打卡记录_${expStart}_${expEnd}.csv`;a.click();URL.revokeObjectURL(url);
-    showToast("✓ 已导出","ok");
+    showToast(`✓ 已导出 ${rows.length} 条记录`,"ok");
   };
 
   const handleLogout=()=>{
