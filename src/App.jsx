@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import storage from './storage';
+
 const H = 36;
 const HOURS = Array.from({length:18}, (_,i) => i+7); // 7,8,...,24 → 7:00 to 次日01:00
 const LATE = Array.from({length:6}, (_,i) => i+1); // 1,2,3,4,5,6
@@ -701,7 +702,8 @@ export default function HabitTracker() {
               <button className="bp" style={{width:"100%"}} onClick={async()=>{
                 const n=editGroupName.trim()||"时间轴打卡"; setGroupName(n); setEditGroupName(n);
                 await saveCfg({groupName:n});
-              }}>保存组名</button>
+                const btn=document.getElementById("save-gn-btn"); if(btn){btn.textContent="✓ 已保存"; setTimeout(()=>{btn.textContent="保存组名"},1500);}
+              }} id="save-gn-btn">保存组名</button>
             </div>
           </div>
 
@@ -780,7 +782,11 @@ export default function HabitTracker() {
           <div className="ss">
             <h3>🗑️ 数据</h3>
             <div className="sc">
-              <button className="bdel" style={{width:"100%"}} onClick={async()=>{if(confirm("确定清除所有数据？")){setData({});setPhase("setup");try{await storage.delete("ht5-cfg");await storage.delete("ht5-data",true)}catch{}}}}>清除所有数据并重置</button>
+              <button className="bdel" style={{width:"100%"}} onClick={async()=>{
+                if(!confirm("⚠️ 确定要清除所有数据吗？\n\n包括所有打卡记录、成员信息、小组配置。")) return;
+                if(!confirm("再次确认：此操作不可撤销，所有数据将永久删除。\n\n确定继续？")) return;
+                setData({});setPhase("setup");try{await storage.delete("ht5-cfg");await storage.delete("ht5-data",true);await storage.delete("ht5-cfg",true)}catch{}
+              }}>清除所有数据并重置</button>
             </div>
           </div>
         </div>
