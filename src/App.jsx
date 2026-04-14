@@ -360,6 +360,7 @@ export default function HabitTracker() {
   const handleCreate = async () => {
     if (!setupName.trim()) return;
     const code = genCode(); const mid = "m1";
+    storage.setGroup(code);
     const m = [{ id: mid, name: setupName.trim() }];
     setGroupCode(code); setMembers(m); setCurUser(mid); setSelMember(mid);
     setGroupName("时间轴打卡"); setEditGroupName("时间轴打卡");
@@ -371,6 +372,7 @@ export default function HabitTracker() {
   const handleJoin = async () => {
     if (!joinName.trim() || !joinCode.trim()) return;
     const jc = joinCode.trim().toUpperCase();
+    storage.setGroup(jc);
     const name = joinName.trim();
     // Try to load existing group config from shared storage
     let existingCfg = null;
