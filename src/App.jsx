@@ -322,8 +322,51 @@ export default function HabitTracker() {
   const firstH = visHours[0];
   const totalH = visHours.length;
 
+  // URL param helpers
+  const getUrlParams = () => {
+    const p = new URLSearchParams(window.location.search);
+    return { group: p.get("g"), user: p.get("u") };
+  };
+  const setUrlParams = (code, uid) => {
+    const url = new URL(window.location.href);
+    url.searchParams.set("g", code);
+    url.searchParams.set("u", uid);
+    window.history.replaceState({}, "", url.toString());
+  };
+
   useEffect(() => {
     (async () => {
+      // 1. Try URL params first (bookmark / home screen link)
+      const urlP = getUrlParams();
+      if (urlP.group && urlP.user) {
+        try {
+          const r = await storage.get("ht5-cfg");
+          if (r?.value) {
+            const c = JSON.parse(r.value);
+            if (c.code === urlP.group) {
+              setGroupCode(c.code); setMembers(c.members); setCurUser(urlP.user);
+              setSelMember(urlP.user); setGroupName(c.groupName || "时间轴打卡");
+              setEditGroupName(c.groupName || "时间轴打卡");
+              if (c.dark !== undefined) setDark(c.dark);
+              setPhase("app");
+              // load data
+              try {
+                const rd = await storage.get("ht5-data", true);
+                if (rd?.value) setData(JSON.parse(rd.value));
+                else setData(SAMPLE_DATA());
+              } catch { setData(SAMPLE_DATA()); }
+              try {
+                const rr = await storage.get("ht5-recent");
+                if (rr?.value) setRecentInputs(JSON.parse(rr.value));
+              } catch {}
+              setLoaded(true);
+              return;
+            }
+          }
+        } catch {}
+      }
+
+      // 2. Fall back to stored config
       try {
         const r = await storage.get("ht5-cfg");
         if (r?.value) {
@@ -332,6 +375,7 @@ export default function HabitTracker() {
           setSelMember(c.curUser); setGroupName(c.groupName || "时间轴打卡");
           setEditGroupName(c.groupName || "时间轴打卡");
           if (c.dark !== undefined) setDark(c.dark);
+          setUrlParams(c.code, c.curUser);
           setPhase("app");
         }
       } catch {}
@@ -344,12 +388,8 @@ export default function HabitTracker() {
         const r = await storage.get("ht5-recent");
         if (r?.value) setRecentInputs(JSON.parse(r.value));
       } catch {}
-    setLoaded(true);
+      setLoaded(true);
     })();
-    const unsub = storage.listen("ht5-data", (val) => {
-      try { setData(JSON.parse(val)); } catch {}
-    });
-    return () => unsub();
   }, []);
 
   const saveData = useCallback(async d => { setData(d); try { await storage.set("ht5-data", JSON.stringify(d), true); } catch {} }, []);
@@ -366,16 +406,17 @@ export default function HabitTracker() {
     setGroupName("时间轴打卡"); setEditGroupName("时间轴打卡");
     const cfg = { code, members: m, curUser: mid, groupName: "时间轴打卡", dark };
     try { await storage.set("ht5-cfg", JSON.stringify(cfg)); } catch {}
-    await saveData(SAMPLE_DATA()); storage.setGroup(code); setPhase("app");
+    await saveData(SAMPLE_DATA()); setUrlParams(code, mid); setPhase("app");
   };
   const handleJoin = async () => {
     if (!joinName.trim() || !joinCode.trim()) return;
     const mid = "m" + (members.length + 1);
     const nm = [...members, { id: mid, name: joinName.trim() }];
-    setGroupCode(joinCode.trim().toUpperCase()); setMembers(nm); setCurUser(mid); setSelMember(mid);
-    const cfg = { code: joinCode.trim().toUpperCase(), members: nm, curUser: mid, groupName, dark };
+    const jc = joinCode.trim().toUpperCase();
+    setGroupCode(jc); setMembers(nm); setCurUser(mid); setSelMember(mid);
+    const cfg = { code: jc, members: nm, curUser: mid, groupName, dark };
     try { await storage.set("ht5-cfg", JSON.stringify(cfg)); } catch {}
-    storage.setGroup(joinCode.trim().toUpperCase()); setPhase("app");
+    setUrlParams(jc, mid); setPhase("app");
   };
   const handleAddMember = async () => {
     if (!addName.trim()) return;
@@ -721,6 +762,20 @@ export default function HabitTracker() {
                 <button className="bs2" style={{fontSize:".7rem",padding:".3rem .6rem"}} onClick={()=>navigator.clipboard?.writeText(groupCode)}>复制</button>
               </div>
               <p style={{fontSize:".7rem",color:"var(--txt3)",marginTop:".35rem"}}>分享邀请码给朋友即可加入</p>
+            </div>
+          </div>
+
+          <div className="ss">
+            <h3>🔗 我的专属链接</h3>
+            <div className="sc">
+              <p style={{fontSize:".75rem",color:"var(--txt2)",marginBottom:".4rem"}}>用这个链接添加到手机主屏幕，下次打开自动登录，无需重新输入邀请码</p>
+              <div style={{padding:".5rem",background:"var(--bg)",borderRadius:".4rem",fontSize:".7rem",fontFamily:"var(--mono)",wordBreak:"break-all",color:"var(--txt3)",marginBottom:".4rem"}}>
+                {typeof window !== "undefined" ? `${window.location.origin}${window.location.pathname}?g=${groupCode}&u=${curUser}` : ""}
+              </div>
+              <button className="bp" style={{width:"100%"}} onClick={()=>{
+                const link = `${window.location.origin}${window.location.pathname}?g=${groupCode}&u=${curUser}`;
+                navigator.clipboard?.writeText(link);
+              }}>复制我的链接</button>
             </div>
           </div>
 
