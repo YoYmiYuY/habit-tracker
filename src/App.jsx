@@ -318,7 +318,9 @@ export default function HabitTracker(){
     const c={code:groupCode,members,curUser,groupName,dark,...overrides};
     LC.set("cfg",c);
     try{await storage.set("ht5-cfg",JSON.stringify(c))}catch{}
-    try{await storage.set("ht5-cfg",JSON.stringify(c),true)}catch{}
+    // Shared config: only code, members, groupName (not curUser or dark — those are per-device)
+    const shared={code:c.code,members:c.members,groupName:c.groupName};
+    try{await storage.set("ht5-cfg",JSON.stringify(shared),true)}catch{}
   },[groupCode,members,curUser,groupName,dark]);
 
   const loadApp=useCallback(async()=>{
@@ -357,12 +359,13 @@ export default function HabitTracker(){
     const code=genCode();const mid="m1";
     storage.setGroup(code);
     const m=[{id:mid,name:setupName.trim()}];
-    const cfg={code,members:m,curUser:mid,groupName:"时间轴打卡",dark};
+    const localCfg={code,members:m,curUser:mid,groupName:"时间轴打卡",dark};
+    const sharedCfg={code,members:m,groupName:"时间轴打卡"};
     setGroupCode(code);setMembers(m);setCurUser(mid);setSelMember(mid);
     setGroupName("时间轴打卡");setEditGroupName("时间轴打卡");
-    LC.set("cfg",cfg);
-    try{await storage.set("ht5-cfg",JSON.stringify(cfg))}catch{}
-    try{await storage.set("ht5-cfg",JSON.stringify(cfg),true)}catch{}
+    LC.set("cfg",localCfg);
+    try{await storage.set("ht5-cfg",JSON.stringify(localCfg))}catch{}
+    try{await storage.set("ht5-cfg",JSON.stringify(sharedCfg),true)}catch{}
     await saveData(SAMPLE_DATA(),true);setPhase("app");
     showToast("✓ 打卡组已创建","ok");
   };
@@ -377,30 +380,35 @@ export default function HabitTracker(){
     if(existingCfg&&existingCfg.code===jc){
       const existingMember=existingCfg.members.find(m=>m.name===name);
       if(existingMember){
-        const cfg={...existingCfg,curUser:existingMember.id};
+        // Returning user — only save locally, don't touch shared
+        const localCfg={...existingCfg,curUser:existingMember.id,dark};
         setGroupCode(jc);setMembers(existingCfg.members);setCurUser(existingMember.id);setSelMember(existingMember.id);
         setGroupName(existingCfg.groupName||"时间轴打卡");setEditGroupName(existingCfg.groupName||"时间轴打卡");
-        LC.set("cfg",cfg);
-        try{await storage.set("ht5-cfg",JSON.stringify(cfg))}catch{}
+        LC.set("cfg",localCfg);
+        try{await storage.set("ht5-cfg",JSON.stringify(localCfg))}catch{}
         setPhase("app");showToast("✓ 欢迎回来，已继承你的数据","ok");
       }else{
+        // New member — update shared members list (without curUser)
         const mid="m"+(existingCfg.members.length+1);
         const nm=[...existingCfg.members,{id:mid,name}];
-        const cfg={...existingCfg,members:nm,curUser:mid};
+        const localCfg={code:jc,members:nm,curUser:mid,groupName:existingCfg.groupName||"时间轴打卡",dark};
+        const sharedCfg={code:jc,members:nm,groupName:existingCfg.groupName||"时间轴打卡"};
         setGroupCode(jc);setMembers(nm);setCurUser(mid);setSelMember(mid);
         setGroupName(existingCfg.groupName||"时间轴打卡");setEditGroupName(existingCfg.groupName||"时间轴打卡");
-        LC.set("cfg",cfg);
-        try{await storage.set("ht5-cfg",JSON.stringify(cfg))}catch{}
-        try{await storage.set("ht5-cfg",JSON.stringify(cfg),true)}catch{}
+        LC.set("cfg",localCfg);
+        try{await storage.set("ht5-cfg",JSON.stringify(localCfg))}catch{}
+        try{await storage.set("ht5-cfg",JSON.stringify(sharedCfg),true)}catch{}
         setPhase("app");showToast("✓ 加入成功","ok");
       }
     }else{
+      // No group found — create new
       const mid="m1";const nm=[{id:mid,name}];
-      const cfg={code:jc,members:nm,curUser:mid,groupName:"时间轴打卡",dark};
+      const localCfg={code:jc,members:nm,curUser:mid,groupName:"时间轴打卡",dark};
+      const sharedCfg={code:jc,members:nm,groupName:"时间轴打卡"};
       setGroupCode(jc);setMembers(nm);setCurUser(mid);setSelMember(mid);
-      LC.set("cfg",cfg);
-      try{await storage.set("ht5-cfg",JSON.stringify(cfg))}catch{}
-      try{await storage.set("ht5-cfg",JSON.stringify(cfg),true)}catch{}
+      LC.set("cfg",localCfg);
+      try{await storage.set("ht5-cfg",JSON.stringify(localCfg))}catch{}
+      try{await storage.set("ht5-cfg",JSON.stringify(sharedCfg),true)}catch{}
       await saveData(SAMPLE_DATA(),true);setPhase("app");showToast("✓ 打卡组已创建","ok");
     }
     try{const r=await storage.get("ht5-data",true);if(r?.value){const d=JSON.parse(r.value);setData(d);LC.set("data",d)}}catch{}
