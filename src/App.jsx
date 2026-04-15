@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import storage from './storage';
+import { getShared, setShared, listenShared } from "./storage";
 
 
 const H = 36;
@@ -249,6 +249,19 @@ function Toast({msg,type,onDismiss}){
   return <div className="toast-wrap"><div className={`toast ${type}`} onClick={type==="fail"?onDismiss:undefined}>{msg}</div></div>;
 }
 
+function Toast({msg,type,onDismiss}){
+  useEffect(()=>{if(type==="ok"){const t=setTimeout(onDismiss,1200);return()=>clearTimeout(t)}},[type,onDismiss]);
+  if(!msg)return null;
+  return <div className="toast-wrap"><div className={`toast ${type}`} onClick={type==="fail"?onDismiss:undefined}>{msg}</div></div>;
+}
+
+/* ─── Local storage helpers ─── */
+const LC={
+  get:k=>{try{return JSON.parse(localStorage.getItem("ht_"+k))}catch{return null}},
+  set:(k,v)=>{try{localStorage.setItem("ht_"+k,JSON.stringify(v))}catch{}},
+  del:k=>{try{localStorage.removeItem("ht_"+k)}catch{}},
+};
+
 export default function HabitTracker(){
   const[loaded,setLoaded]=useState(false);
   const[loadError,setLoadError]=useState(false);
@@ -278,7 +291,6 @@ export default function HabitTracker(){
   const[dmActual,setDmActual]=useState("");
   const[expStart,setExpStart]=useState(TODAY);
   const[expEnd,setExpEnd]=useState(TODAY);
-  const[addName,setAddName]=useState("");
   const[editGroupName,setEditGroupName]=useState("");
   const[editingMemberId,setEditingMemberId]=useState(null);
   const[editingMemberName,setEditingMemberName]=useState("");
@@ -303,125 +315,152 @@ export default function HabitTracker(){
   const totalH=visHours.length;
 
   const saveWithFeedback=useCallback(async(fn,msg="✓ 已保存")=>{
-    try{await fn();showToast(msg,"ok");return true;}
-    catch{showToast("保存失败，点击重试","fail");retryRef.current=fn;return false;}
+    try{await fn();showToast(msg,"ok");return true}
+    catch{showToast("保存失败，点击重试","fail");retryRef.current=fn;return false}
   },[]);
 
+  /* ─── Firebase: read/write shared data directly with groupCode ─── */
+  // gcRef always holds latest groupCode for async callbacks
+  const gcRef=useRef("");
+  useEffect(()=>{gcRef.current=groupCode},[groupCode]);
+
+  const readCfg=async(code)=>await getShared(code,"cfg");
+  const writeCfg=async(code,cfg)=>await setShared(code,"cfg",cfg);
+  const readData=async(code)=>await getShared(code,"plans");
+  const writeData=async(code,d)=>await setShared(code,"plans",{v:JSON.stringify(d),t:Date.now()});
+
+  /* ─── Save data with feedback ─── */
   const saveData=useCallback(async(d,silent=false)=>{
     setData(d);LC.set("data",d);
-    const fn=async()=>{await storage.set("ht5-data",JSON.stringify(d),true)};
-    if(silent){try{await fn()}catch{}}
-    else await saveWithFeedback(fn);
+    const code=gcRef.current;if(!code)return;
+    const fn=async()=>await writeData(code,d);
+    if(silent){try{await fn()}catch{}}else await saveWithFeedback(fn);
   },[saveWithFeedback]);
 
+  /* ─── Save cfg (shared: only members+groupName; local: everything) ─── */
   const saveCfg=useCallback(async(overrides={})=>{
-    const c={code:groupCode,members,curUser,groupName,dark,...overrides};
-    LC.set("cfg",c);
-    try{await storage.set("ht5-cfg",JSON.stringify(c))}catch{}
-    // Shared config: only code, members, groupName (not curUser or dark — those are per-device)
-    const shared={code:c.code,members:c.members,groupName:c.groupName};
-    try{await storage.set("ht5-cfg",JSON.stringify(shared),true)}catch{}
+    const local={code:groupCode,members,curUser,groupName,dark,...overrides};
+    LC.set("cfg",local);
+    const code=local.code||groupCode;
+    const shared={members:local.members||members,groupName:local.groupName||groupName};
+    try{await writeCfg(code,shared)}catch{}
   },[groupCode,members,curUser,groupName,dark]);
 
+  /* ─── Load ─── */
   const loadApp=useCallback(async()=>{
     setLoadError(false);
-    const localCfg=LC.get("cfg");const localData=LC.get("data");let entered=false;
-    if(localCfg&&localCfg.code&&localCfg.curUser){
-      storage.setGroup(localCfg.code);
-      setGroupCode(localCfg.code);setMembers(localCfg.members||[]);
-      setCurUser(localCfg.curUser);setSelMember(localCfg.curUser);
-      setGroupName(localCfg.groupName||"时间轴打卡");setEditGroupName(localCfg.groupName||"时间轴打卡");
-      if(localCfg.dark!==undefined)setDark(localCfg.dark);
-      if(localData)setData(localData);
+    // 1. Local cache first
+    const lc=LC.get("cfg");const ld=LC.get("data");let entered=false;
+    if(lc&&lc.code&&lc.curUser){
+      gcRef.current=lc.code;
+      setGroupCode(lc.code);setMembers(lc.members||[]);setCurUser(lc.curUser);setSelMember(lc.curUser);
+      setGroupName(lc.groupName||"时间轴打卡");setEditGroupName(lc.groupName||"时间轴打卡");
+      if(lc.dark!==undefined)setDark(lc.dark);
+      if(ld)setData(ld);
       setPhase("app");entered=true;
     }
-    try{
-      const r=await storage.get("ht5-cfg");
-      if(r?.value){const c=JSON.parse(r.value);
-        storage.setGroup(c.code);
-        setGroupCode(c.code);setMembers(c.members||[]);setCurUser(c.curUser);setSelMember(c.curUser);
-        setGroupName(c.groupName||"时间轴打卡");setEditGroupName(c.groupName||"时间轴打卡");
-        if(c.dark!==undefined)setDark(c.dark);LC.set("cfg",c);
-        if(!entered)setPhase("app");entered=true;}
-    }catch{if(!entered){setLoadError(true);setLoaded(true);return;}}
-    try{const r=await storage.get("ht5-data",true);
-      if(r?.value){const d=JSON.parse(r.value);setData(d);LC.set("data",d);}
-      else if(!localData){const d=SAMPLE_DATA();setData(d);LC.set("data",d);}
-    }catch{if(!localData)setData(SAMPLE_DATA());}
-    try{const r=await storage.get("ht5-recent");if(r?.value)setRecentInputs(JSON.parse(r.value))}catch{}
+    // 2. Sync from Firebase
+    if(entered){
+      try{
+        const sc=await readCfg(gcRef.current);
+        if(sc){
+          const merged={...LC.get("cfg"),members:sc.members||[],groupName:sc.groupName||"时间轴打卡"};
+          setMembers(merged.members);setGroupName(merged.groupName);setEditGroupName(merged.groupName);
+          LC.set("cfg",merged);
+        }
+        const sd=await readData(gcRef.current);
+        if(sd?.v){const d=JSON.parse(sd.v);setData(d);LC.set("data",d)}
+      }catch{}
+    }
+    // 3. Load recent inputs
+    const ri=LC.get("recent");if(ri)setRecentInputs(ri);
     setLoaded(true);
+    if(!entered)setLoadError(false);
   },[]);
 
   useEffect(()=>{loadApp()},[loadApp]);
 
+  // Listen for real-time data updates
+  useEffect(()=>{
+    if(!groupCode)return;
+    const unsub=listenShared(groupCode,"plans",d=>{
+      if(d?.v){try{const parsed=JSON.parse(d.v);setData(parsed);LC.set("data",parsed)}catch{}}
+    });
+    return()=>unsub();
+  },[groupCode]);
+
+  // Also listen for cfg changes (new members joining)
+  useEffect(()=>{
+    if(!groupCode)return;
+    const unsub=listenShared(groupCode,"cfg",d=>{
+      if(d?.members){setMembers(d.members);const lc=LC.get("cfg");if(lc){lc.members=d.members;LC.set("cfg",lc)}}
+      if(d?.groupName){setGroupName(d.groupName);setEditGroupName(d.groupName)}
+    });
+    return()=>unsub();
+  },[groupCode]);
+
+  /* ─── Handlers ─── */
   const handleCreate=async()=>{
     if(!setupName.trim())return;
     const code=genCode();const mid="m1";
-    storage.setGroup(code);
     const m=[{id:mid,name:setupName.trim()}];
-    const localCfg={code,members:m,curUser:mid,groupName:"时间轴打卡",dark};
-    const sharedCfg={code,members:m,groupName:"时间轴打卡"};
+    gcRef.current=code;
     setGroupCode(code);setMembers(m);setCurUser(mid);setSelMember(mid);
     setGroupName("时间轴打卡");setEditGroupName("时间轴打卡");
-    LC.set("cfg",localCfg);
-    try{await storage.set("ht5-cfg",JSON.stringify(localCfg))}catch{}
-    try{await storage.set("ht5-cfg",JSON.stringify(sharedCfg),true)}catch{}
-    await saveData(SAMPLE_DATA(),true);setPhase("app");
-    showToast("✓ 打卡组已创建","ok");
+    LC.set("cfg",{code,members:m,curUser:mid,groupName:"时间轴打卡",dark});
+    try{await writeCfg(code,{members:m,groupName:"时间轴打卡"})}catch{}
+    const sd=SAMPLE_DATA();setData(sd);LC.set("data",sd);
+    try{await writeData(code,sd)}catch{}
+    setPhase("app");showToast("✓ 打卡组已创建","ok");
   };
 
   const handleJoin=async()=>{
     if(!joinName.trim()||!joinCode.trim())return;
     const jc=joinCode.trim().toUpperCase();const name=joinName.trim();
-    storage.setGroup(jc);
-    let existingCfg=null;
-    try{const r=await storage.get("ht5-cfg",true);if(r?.value)existingCfg=JSON.parse(r.value)}catch{}
+    gcRef.current=jc;
+    // Read existing group
+    let sc=null;
+    try{sc=await readCfg(jc)}catch{}
 
-    if(existingCfg&&existingCfg.code===jc){
-      const existingMember=existingCfg.members.find(m=>m.name===name);
-      if(existingMember){
-        // Returning user — only save locally, don't touch shared
-        const localCfg={...existingCfg,curUser:existingMember.id,dark};
-        setGroupCode(jc);setMembers(existingCfg.members);setCurUser(existingMember.id);setSelMember(existingMember.id);
-        setGroupName(existingCfg.groupName||"时间轴打卡");setEditGroupName(existingCfg.groupName||"时间轴打卡");
-        LC.set("cfg",localCfg);
-        try{await storage.set("ht5-cfg",JSON.stringify(localCfg))}catch{}
+    if(sc&&sc.members){
+      const existing=sc.members.find(m=>m.name===name);
+      if(existing){
+        // Returning user
+        setGroupCode(jc);setMembers(sc.members);setCurUser(existing.id);setSelMember(existing.id);
+        setGroupName(sc.groupName||"时间轴打卡");setEditGroupName(sc.groupName||"时间轴打卡");
+        LC.set("cfg",{code:jc,members:sc.members,curUser:existing.id,groupName:sc.groupName||"时间轴打卡",dark});
+        // Load plans
+        try{const sd=await readData(jc);if(sd?.v){const d=JSON.parse(sd.v);setData(d);LC.set("data",d)}}catch{}
         setPhase("app");showToast("✓ 欢迎回来，已继承你的数据","ok");
       }else{
-        // New member — update shared members list (without curUser)
-        const mid="m"+(existingCfg.members.length+1);
-        const nm=[...existingCfg.members,{id:mid,name}];
-        const localCfg={code:jc,members:nm,curUser:mid,groupName:existingCfg.groupName||"时间轴打卡",dark};
-        const sharedCfg={code:jc,members:nm,groupName:existingCfg.groupName||"时间轴打卡"};
+        // New member
+        const mid="m"+(sc.members.length+1);
+        const nm=[...sc.members,{id:mid,name}];
         setGroupCode(jc);setMembers(nm);setCurUser(mid);setSelMember(mid);
-        setGroupName(existingCfg.groupName||"时间轴打卡");setEditGroupName(existingCfg.groupName||"时间轴打卡");
-        LC.set("cfg",localCfg);
-        try{await storage.set("ht5-cfg",JSON.stringify(localCfg))}catch{}
-        try{await storage.set("ht5-cfg",JSON.stringify(sharedCfg),true)}catch{}
+        setGroupName(sc.groupName||"时间轴打卡");setEditGroupName(sc.groupName||"时间轴打卡");
+        LC.set("cfg",{code:jc,members:nm,curUser:mid,groupName:sc.groupName||"时间轴打卡",dark});
+        try{await writeCfg(jc,{members:nm,groupName:sc.groupName||"时间轴打卡"})}catch{}
+        try{const sd=await readData(jc);if(sd?.v){const d=JSON.parse(sd.v);setData(d);LC.set("data",d)}}catch{}
         setPhase("app");showToast("✓ 加入成功","ok");
       }
     }else{
-      // No group found — create new
+      // No group found
       const mid="m1";const nm=[{id:mid,name}];
-      const localCfg={code:jc,members:nm,curUser:mid,groupName:"时间轴打卡",dark};
-      const sharedCfg={code:jc,members:nm,groupName:"时间轴打卡"};
       setGroupCode(jc);setMembers(nm);setCurUser(mid);setSelMember(mid);
-      LC.set("cfg",localCfg);
-      try{await storage.set("ht5-cfg",JSON.stringify(localCfg))}catch{}
-      try{await storage.set("ht5-cfg",JSON.stringify(sharedCfg),true)}catch{}
-      await saveData(SAMPLE_DATA(),true);setPhase("app");showToast("✓ 打卡组已创建","ok");
+      LC.set("cfg",{code:jc,members:nm,curUser:mid,groupName:"时间轴打卡",dark});
+      try{await writeCfg(jc,{members:nm,groupName:"时间轴打卡"})}catch{}
+      const sd=SAMPLE_DATA();setData(sd);LC.set("data",sd);
+      try{await writeData(jc,sd)}catch{}
+      setPhase("app");showToast("✓ 打卡组已创建","ok");
     }
-    try{const r=await storage.get("ht5-data",true);if(r?.value){const d=JSON.parse(r.value);setData(d);LC.set("data",d)}}catch{}
   };
 
-  const handleAddMember=async()=>{if(!addName.trim())return;const mid="m"+(members.length+1);const nm=[...members,{id:mid,name:addName.trim()}];setMembers(nm);setAddName("");await saveCfg({members:nm});showToast("✓ 已添加","ok")};
   const renameMember=async(mid,newName)=>{if(!newName.trim())return;const nm=members.map(m=>m.id===mid?{...m,name:newName.trim()}:m);setMembers(nm);setEditingMemberId(null);setEditingMemberName("");await saveCfg({members:nm});showToast("✓ 昵称已修改","ok")};
-  const toggleDark=async()=>{const nd=!dark;setDark(nd);await saveCfg({dark:nd})};
+  const toggleDark=async()=>{const nd=!dark;setDark(nd);LC.set("cfg",{...LC.get("cfg"),dark:nd})};
 
   const getMemberDay=(date,mid)=>data[date]?.[mid]||{plans:[],reflection:{text:"",isPublic:true,sent:false}};
   const setMemberDay=(date,mid,dayData)=>{const nd={...data,[date]:{...data[date],[mid]:dayData}};saveData(nd)};
 
-  // Fix #5: click grid = 1 hour default
   const openAddPlan=(mid,startH)=>{
     setPmContent("");setPmStart(startH);setPmEnd(startH+1);
     setPmStartStr(fmtT(startH));setPmEndStr(fmtT(startH+1));
@@ -435,7 +474,7 @@ export default function HabitTracker(){
     else plans=[...md.plans,{id:genId(),start:pmStart,end:pmEnd,content,done:false,actual:""}];
     setMemberDay(selDate,memberId,{...md,plans});setPlanModal(null);
     const updated=[content,...recentInputs.filter(r=>r!==content)].slice(0,5);
-    setRecentInputs(updated);try{storage.set("ht5-recent",JSON.stringify(updated))}catch{}
+    setRecentInputs(updated);LC.set("recent",updated);
   };
   const deletePlan=(mid,pid)=>{const md=getMemberDay(selDate,mid);setMemberDay(selDate,mid,{...md,plans:md.plans.filter(p=>p.id!==pid)});setDetailModal(null)};
   const toggleDone=(mid,pid)=>{const md=getMemberDay(selDate,mid);setMemberDay(selDate,mid,{...md,plans:md.plans.map(p=>p.id===pid?{...p,done:!p.done}:p)})};
@@ -449,7 +488,6 @@ export default function HabitTracker(){
   const startEditReflection=()=>{setReflDraft(myDay.reflection.text);setReflPub(myDay.reflection.isPublic);setReflEditing(true)};
   useEffect(()=>{setReflEditing(false);setReflDraft("")},[selDate,curUser]);
 
-  // Fix #3: export same day works
   const doExport=()=>{
     const rows=[];
     const s=new Date(expStart+"T00:00:00");const e=new Date(expEnd+"T00:00:00");
@@ -715,4 +753,5 @@ export default function HabitTracker(){
       </div></div>}
     </div>
   );
+}
 }
