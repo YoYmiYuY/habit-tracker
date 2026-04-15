@@ -141,8 +141,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--txt)}
 .now-line::before{content:"";position:absolute;left:-4px;top:-3px;width:8px;height:8px;border-radius:50%;background:var(--danger)}
 .plan-card{position:absolute;border-radius:.5rem;padding:.35rem .45rem;cursor:pointer;transition:all .15s;overflow:hidden;z-index:2;border-left:3.5px solid;display:flex;flex-direction:column;gap:.08rem;min-height:1.8rem;box-shadow:var(--shadow)}
 .plan-card:active{transform:scale(.98);z-index:3}
-.plan-card .pc-content{font-size:.72rem;font-weight:600;line-height:1.3;color:var(--txt);overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;transition:all .25s ease}
-.plan-card.expanded .pc-content{-webkit-line-clamp:unset;overflow:visible}
+.plan-card .pc-content{font-size:.72rem;font-weight:600;line-height:1.3;color:var(--txt);overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
 .plan-card .pc-time{font-size:.55rem;font-family:var(--mono);color:var(--txt3)}
 .plan-card .pc-actual{font-size:.62rem;color:var(--warn);margin-top:.05rem;font-weight:500}
 .plan-card .pc-check{position:absolute;top:.3rem;right:.3rem;width:1.05rem;height:1.05rem;border-radius:.3rem;border:1.5px solid var(--bdr2);background:var(--white);display:flex;align-items:center;justify-content:center;font-size:.55rem;color:#fff;transition:all .2s}
@@ -290,7 +289,6 @@ export default function HabitTracker(){
   const[copyModal,setCopyModal]=useState(false);
   const[detailModal,setDetailModal]=useState(null);
   const[dmActual,setDmActual]=useState("");
-  const[expandedPlan,setExpandedPlan]=useState(null);
   const[expStart,setExpStart]=useState(TODAY);
   const[expEnd,setExpEnd]=useState(TODAY);
   const[editGroupName,setEditGroupName]=useState("");
@@ -616,10 +614,10 @@ export default function HabitTracker(){
                           const top=(p.start-firstH)*H*2;const height=Math.max((p.end-p.start)*H*2,H*2);
                           const isDone=p.done;const hasActual=p.actual&&!p.done;
                           const{col:pcol,totalCols}=layout[p.id];const widthPct=100/totalCols;const leftPct=pcol*widthPct;
-                          return(<div key={p.id} className={`plan-card ${isDone?"done":""} ${hasActual?"changed":""} ${expandedPlan===p.id?"expanded":""}`}
+                          return(<div key={p.id} className={`plan-card ${isDone?"done":""} ${hasActual?"changed":""}`}
                             style={{top,height:height-4,left:`calc(${leftPct}% + 3px)`,width:`calc(${widthPct}% - 6px)`,right:"auto",
                               background:isDone?"var(--okBg)":hasActual?"var(--warnBg)":col+"14",borderLeftColor:isDone?"var(--ok)":col}}
-                            onClick={e=>{e.stopPropagation();setExpandedPlan(expandedPlan===p.id?null:p.id);if(m.id===curUser){setDetailModal({memberId:m.id,plan:p});setDmActual(p.actual||"")}}}>
+                            onClick={e=>{e.stopPropagation();if(m.id===curUser){setDetailModal({memberId:m.id,plan:p});setDmActual(p.actual||"")}}}>
                             <div className="pc-time">{fmtT(p.start)}-{fmtT(p.end)}</div>
                             <div className="pc-content">{p.content}</div>
                             {hasActual&&<div className="pc-actual">实际: {p.actual}</div>}
