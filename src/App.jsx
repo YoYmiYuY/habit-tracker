@@ -390,40 +390,71 @@ export default function HabitTracker(){
     setPhase("app");showToast("✓ 打卡组已创建","ok");
   };
 
+  /* ─── handleJoin：修复数据覆盖 bug ─── */
+  /* 旧版本：读 Firebase 失败会静默进入 else 分支，用 SAMPLE_DATA 覆盖已有数据 */
+  /* 新版本：1) 读失败 → 报错 return，不做任何写入 */
+  /*        2) 新组不再写 SAMPLE_DATA，用空数据 */
   const handleJoin=async()=>{
     if(!joinName.trim()||!joinCode.trim())return;
     const jc=joinCode.trim().toUpperCase();const name=joinName.trim();
-    gcRef.current=jc;
-    let sc=null;
-    try{sc=await readCfg(jc)}catch{}
 
-    if(sc&&sc.members){
+    // 读 Firebase。失败绝不吞掉，也绝不走"新组"分支。
+    let sc;
+    try{
+      sc=await readCfg(jc);
+    }catch(err){
+      showToast("连接失败，请检查网络后重试（数据未被修改）","fail");
+      return;
+    }
+
+    // 读成功 + 有成员 → 老组
+    if(sc&&sc.members&&sc.members.length>0){
+      gcRef.current=jc;
       const existing=sc.members.find(m=>m.name===name);
       if(existing){
+        // 老用户回来
         setGroupCode(jc);setMembers(sc.members);setCurUser(existing.id);setSelMember(existing.id);
         setGroupName(sc.groupName||"时间轴打卡");setEditGroupName(sc.groupName||"时间轴打卡");
         LC.set("cfg",{code:jc,members:sc.members,curUser:existing.id,groupName:sc.groupName||"时间轴打卡",dark});
-        try{const sd=await readData(jc);if(sd?.v){const d=JSON.parse(sd.v);setData(d);LC.set("data",d)}}catch{}
-        setPhase("app");showToast("✓ 欢迎回来，已继承你的数据","ok");
+        try{
+          const sd=await readData(jc);
+          if(sd?.v){const d=JSON.parse(sd.v);setData(d);LC.set("data",d)}
+          else{setData({});LC.set("data",{})}
+        }catch{
+          // plans 读失败也不写任何东西，保持本地已有或空
+          showToast("数据加载失败，请稍后刷新","fail");
+        }
+        setPhase("app");showToast("✓ 欢迎回来","ok");
       }else{
+        // 新成员加入老组
         const mid="m"+(sc.members.length+1);
         const nm=[...sc.members,{id:mid,name}];
         setGroupCode(jc);setMembers(nm);setCurUser(mid);setSelMember(mid);
         setGroupName(sc.groupName||"时间轴打卡");setEditGroupName(sc.groupName||"时间轴打卡");
         LC.set("cfg",{code:jc,members:nm,curUser:mid,groupName:sc.groupName||"时间轴打卡",dark});
         try{await writeCfg(jc,{members:nm,groupName:sc.groupName||"时间轴打卡"})}catch{}
-        try{const sd=await readData(jc);if(sd?.v){const d=JSON.parse(sd.v);setData(d);LC.set("data",d)}}catch{}
+        try{
+          const sd=await readData(jc);
+          if(sd?.v){const d=JSON.parse(sd.v);setData(d);LC.set("data",d)}
+          else{setData({});LC.set("data",{})}
+        }catch{
+          showToast("数据加载失败，请稍后刷新","fail");
+        }
         setPhase("app");showToast("✓ 加入成功","ok");
       }
-    }else{
-      const mid="m1";const nm=[{id:mid,name}];
-      setGroupCode(jc);setMembers(nm);setCurUser(mid);setSelMember(mid);
-      LC.set("cfg",{code:jc,members:nm,curUser:mid,groupName:"时间轴打卡",dark});
-      try{await writeCfg(jc,{members:nm,groupName:"时间轴打卡"})}catch{}
-      const sd=SAMPLE_DATA();setData(sd);LC.set("data",sd);
-      try{await writeData(jc,sd)}catch{}
-      setPhase("app");showToast("✓ 打卡组已创建","ok");
+      return;
     }
+
+    // 读成功 + 没有成员 → 真正的新组。空白加入，绝不写 SAMPLE_DATA。
+    gcRef.current=jc;
+    const mid="m1";const nm=[{id:mid,name}];
+    setGroupCode(jc);setMembers(nm);setCurUser(mid);setSelMember(mid);
+    setGroupName("时间轴打卡");setEditGroupName("时间轴打卡");
+    LC.set("cfg",{code:jc,members:nm,curUser:mid,groupName:"时间轴打卡",dark});
+    try{await writeCfg(jc,{members:nm,groupName:"时间轴打卡"})}catch{}
+    setData({});LC.set("data",{});
+    // 注意：这里故意不 writeData，避免覆盖。第一次有用户加计划时会自动写入。
+    setPhase("app");showToast("✓ 已创建打卡组","ok");
   };
 
   const renameMember=async(mid,newName)=>{if(!newName.trim())return;const nm=members.map(m=>m.id===mid?{...m,name:newName.trim()}:m);setMembers(nm);setEditingMemberId(null);setEditingMemberName("");await saveCfg({members:nm});showToast("✓ 昵称已修改","ok")};
@@ -475,6 +506,20 @@ export default function HabitTracker(){
     const url=URL.createObjectURL(blob);const a=document.createElement("a");
     a.href=url;a.download=`打卡记录_${expStart}_${expEnd}.csv`;a.click();URL.revokeObjectURL(url);
     showToast(`✓ 已导出 ${rows.length} 条记录`,"ok");
+  };
+
+  /* ─── 全量数据备份（JSON 格式）─── */
+  /* 下载当前所有数据（含全部成员、全部日期、反思等），用于本地手动备份 */
+  const doBackupJSON=()=>{
+    const backup={
+      exportedAt:new Date().toISOString(),
+      groupCode,groupName,members,data
+    };
+    const json=JSON.stringify(backup,null,2);
+    const blob=new Blob([json],{type:"application/json"});
+    const url=URL.createObjectURL(blob);const a=document.createElement("a");
+    a.href=url;a.download=`打卡备份_${groupCode}_${dk()}.json`;a.click();URL.revokeObjectURL(url);
+    showToast("✓ 完整备份已下载","ok");
   };
 
   const handleLogout=()=>{
@@ -661,7 +706,12 @@ export default function HabitTracker(){
             <p style={{fontSize:".72rem",color:"var(--txt3)",marginTop:".35rem",lineHeight:1.5}}>这是你的打卡组唯一标识，可以随时使用邀请码 + 昵称登录，数据不会丢失</p>
           </div></div>
 
-          <div className="ss"><h3>📤 导出</h3><div className="sc">
+          <div className="ss"><h3>💾 完整备份</h3><div className="sc">
+            <button className="bp" style={{width:"100%"}} onClick={doBackupJSON}>下载完整备份（JSON）</button>
+            <p style={{fontSize:".72rem",color:"var(--txt3)",marginTop:".35rem",lineHeight:1.5}}>建议每隔几天下载一次保存在本地，万一出现数据异常可以用它手动恢复</p>
+          </div></div>
+
+          <div className="ss"><h3>📤 导出 CSV</h3><div className="sc">
             <div className="er"><label>起始</label><input type="date" className="ei" value={expStart} onChange={e=>setExpStart(e.target.value)}/></div>
             <div className="er"><label>结束</label><input type="date" className="ei" value={expEnd} onChange={e=>setExpEnd(e.target.value)}/></div>
             <button className="bp" style={{width:"100%",marginTop:".3rem"}} onClick={doExport}>导出 CSV</button>
